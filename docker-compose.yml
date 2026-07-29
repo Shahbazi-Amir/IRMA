@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      IRMA_HOST: 0.0.0.0
+      IRMA_PORT: 8000
+    ports:
+      - "8000:8000"
