@@ -143,9 +143,7 @@ def recommend_allocation(profile: InvestorProfile) -> AllocationRecommendation:
             destination="fixed_income",
         )
         moved_total = moved_to_cash + moved_to_fixed
-        rules.append(
-            f"Moved {moved_total}% from risk assets for a horizon under 12 months."
-        )
+        rules.append(f"Moved {moved_total}% from risk assets for a horizon under 12 months.")
 
     if profile.max_drawdown_tolerance <= 0.10:
         moved = _cap_risky_allocation(allocations, maximum=10, destination="fixed_income")
@@ -159,9 +157,7 @@ def recommend_allocation(profile: InvestorProfile) -> AllocationRecommendation:
 
     if not profile.wants_trading and allocations["high_risk_trading"]:
         destination = (
-            "equity_fund"
-            if profile.risk_tolerance is RiskTolerance.AGGRESSIVE
-            else "fixed_income"
+            "equity_fund" if profile.risk_tolerance is RiskTolerance.AGGRESSIVE else "fixed_income"
         )
         moved = _transfer(
             allocations,
