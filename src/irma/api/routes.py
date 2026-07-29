@@ -4,6 +4,9 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from irma.domain.profile import InvestorProfile
+from irma.domain.recommendation import AllocationRecommendation, recommend_allocation
+
 router = APIRouter()
 
 
@@ -25,3 +28,14 @@ def info() -> dict[str, Any]:
         "trade_execution": False,
         "price_prediction": False,
     }
+
+
+@router.post(
+    "/v1/recommendations",
+    response_model=AllocationRecommendation,
+    tags=["recommendations"],
+)
+def create_recommendation(profile: InvestorProfile) -> AllocationRecommendation:
+    """Create a deterministic experimental allocation from validated inputs."""
+
+    return recommend_allocation(profile)
