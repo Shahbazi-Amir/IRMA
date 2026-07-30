@@ -19,17 +19,20 @@ def main() -> None:
     parser.add_argument("--from-date", type=date.fromisoformat)
     args = parser.parse_args()
     settings = get_settings()
-    with FipiranFundProvider(
-        base_url=settings.fipiran_base_url,
-        timeout_seconds=settings.provider_timeout_seconds,
-        min_interval_seconds=settings.provider_min_interval_seconds,
-        catalog_path=settings.fipiran_catalog_path,
-        history_path=settings.fipiran_history_path,
-        user_agent=settings.fipiran_user_agent,
-        failure_threshold=settings.provider_circuit_failures,
-        cooldown_seconds=settings.provider_circuit_cooldown_seconds,
-        retries=settings.provider_max_retries,
-    ) as provider, SessionLocal() as session:
+    with (
+        FipiranFundProvider(
+            base_url=settings.fipiran_base_url,
+            timeout_seconds=settings.provider_timeout_seconds,
+            min_interval_seconds=settings.provider_min_interval_seconds,
+            catalog_path=settings.fipiran_catalog_path,
+            history_path=settings.fipiran_history_path,
+            user_agent=settings.fipiran_user_agent,
+            failure_threshold=settings.provider_circuit_failures,
+            cooldown_seconds=settings.provider_circuit_cooldown_seconds,
+            retries=settings.provider_max_retries,
+        ) as provider,
+        SessionLocal() as session,
+    ):
         print(
             backfill_fund_history(
                 session,

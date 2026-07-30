@@ -18,7 +18,9 @@ SAFE_HEADERS = {"content-type", "content-length", "date", "server", "retry-after
 
 
 def sanitize(text: str) -> str:
-    text = re.sub(r"(?i)(token|secret|password|cookie|authorization)[=:]\s*\S+", r"\1=[redacted]", text)
+    text = re.sub(
+        r"(?i)(token|secret|password|cookie|authorization)[=:]\s*\S+", r"\1=[redacted]", text
+    )
     return text[:500]
 
 
@@ -68,7 +70,14 @@ def diagnose(
                     break
                 retry_after = response.headers.get("retry-after")
                 if attempt < retries:
-                    time.sleep(min(float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt, 5))
+                    time.sleep(
+                        min(
+                            float(retry_after)
+                            if retry_after and retry_after.isdigit()
+                            else 2**attempt,
+                            5,
+                        )
+                    )
             except httpx.HTTPError as exc:
                 attempts.append(
                     {

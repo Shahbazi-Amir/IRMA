@@ -219,7 +219,9 @@ class FipiranFundProvider:
                         if isinstance(exc, httpx.HTTPStatusError)
                         else None
                     )
-                    delay = float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
+                    delay = (
+                        float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
+                    )
                     self.sleep(min(delay + self.random_value() * 0.25, 30))
         assert error is not None
         raise error

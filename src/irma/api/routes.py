@@ -752,7 +752,11 @@ def admin_refresh(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.get("/v1/admin/funds/backfill/{run_id}", dependencies=[Depends(require_admin_key)], tags=["admin"])
+@router.get(
+    "/v1/admin/funds/backfill/{run_id}",
+    dependencies=[Depends(require_admin_key)],
+    tags=["admin"],
+)
 def backfill_status(run_id: str, session: SessionDependency) -> dict[str, Any]:
     run = session.scalar(select(BackfillRun).where(BackfillRun.run_id == run_id))
     if run is None:
