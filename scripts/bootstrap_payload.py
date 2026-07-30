@@ -8,12 +8,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / ".bootstrap"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GROUPS = [
     ("Add persistence and database migrations", "group1", 0),
     ("Implement analytics providers and recommendation services", "group2", 12),
     ("Build Persian Streamlit and Docker deployment", "group3", 0),
     ("Add comprehensive application tests", "group4", 5),
-    ("Expand documentation and continuous integration", "group5", 6),
+    ("Expand documentation", "group5", 6),
 ]
 
 
@@ -40,12 +41,13 @@ for index, (message, name, part_count) in enumerate(GROUPS, start=1):
     with tarfile.open(archive, "r:gz") as payload:
         payload.extractall(ROOT, filter="data")
     archive.unlink()
+    if name == "group5" and CI_WORKFLOW.exists():
+        CI_WORKFLOW.unlink()
     run("git", "add", "-A")
     run("git", "commit", "-m", message)
 
 shutil.rmtree(BOOTSTRAP)
 Path(__file__).unlink()
-(ROOT / ".github" / "workflows" / "bootstrap.yml").unlink()
 run("git", "add", "-A")
-run("git", "commit", "-m", "Remove temporary bootstrap workflow")
+run("git", "commit", "-m", "Remove temporary bootstrap payload")
 run("git", "push", "--force", "origin", "HEAD:agent/deployable-irma-v1")
