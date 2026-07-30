@@ -1,0 +1,22 @@
+name: Bootstrap deployable IRMA
+
+on:
+  push:
+    branches:
+      - agent/deployable-irma-v1
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Materialize reviewed project files
+        run: python scripts/bootstrap_payload.py
