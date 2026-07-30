@@ -283,15 +283,26 @@ def refresh_from_fipiran(
     max_retries: int,
     min_interval_seconds: float,
     history_limit: int,
+    catalog_path: str = "fund/fundcompare/",
+    history_path: str = "chart/getfundchart",
+    user_agent: str = "IRMA/1.0 (+https://github.com/Shahbazi-Amir/IRMA)",
+    failure_threshold: int = 3,
+    cooldown_seconds: float = 300,
 ) -> dict[str, int | str]:
-    provider = FipiranFundProvider(
+    with FipiranFundProvider(
         base_url=base_url,
         timeout_seconds=timeout_seconds,
         min_interval_seconds=min_interval_seconds,
-    )
-    return RefreshCoordinator(max_retries=max_retries).refresh_funds(
-        session, provider, history_limit=history_limit
-    )
+        retries=max_retries,
+        catalog_path=catalog_path,
+        history_path=history_path,
+        user_agent=user_agent,
+        failure_threshold=failure_threshold,
+        cooldown_seconds=cooldown_seconds,
+    ) as provider:
+        return RefreshCoordinator(max_retries=0).refresh_funds(
+            session, provider, history_limit=history_limit
+        )
 
 
 def _refresh_metrics(session: Session, fund: Fund) -> None:

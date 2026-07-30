@@ -5,7 +5,12 @@ import httpx
 import pytest
 from sqlalchemy.orm import Session
 
-from irma.providers.fipiran import FipiranFundProvider
+from irma.providers.fipiran import (
+    CircuitOpenError,
+    FipiranFundProvider,
+    ProviderBlockedError,
+    ProviderContractError,
+)
 from irma.services.data_refresh import RefreshCoordinator
 from irma.services.fund_rankings import MIN_OBSERVATIONS, rank_funds
 
@@ -110,3 +115,102 @@ def test_refresh_is_idempotent_and_produces_ranking(session: Session) -> None:
     ranking = rank_funds(session, "index")
     assert ranking["eligible_count"] == 1
     assert ranking["items"][0]["ranking_version"]
+
+
+def test_provider_reuses_session_and_records_success() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200, content=_catalogue(), headers={"content-type": "application/json"}, request=request
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = FipiranFundProvider(client=client, min_interval_seconds=0, retries=0)
+    provider.fetch()
+    provider.fetch()
+    assert calls == 2
+    assert provider.status()["circuit"] == "closed"
+    assert provider.status()["last_success_at"] is not None
+
+
+def test_provider_context_manager_preserves_injected_client() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    with FipiranFundProvider(client=client) as provider:
+        assert provider.client is client
+    assert client.is_closed is False
+    client.close()
+
+
+@pytest.mark.parametrize(
+    ("content_type", "body", "error"),
+    [
+        ("text/html", b"<html>gateway error</html>", ProviderBlockedError),
+        ("text/html", b"<html>captcha challenge</html>", ProviderBlockedError),
+        ("text/plain", b"not json", ProviderContractError),
+    ],
+)
+def test_provider_rejects_non_json_boundaries(
+    content_type: str, body: bytes, error: type[Exception]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=body, headers={"content-type": content_type}, request=request
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+        retries=0,
+    )
+    with pytest.raises(error):
+        provider.fetch()
+
+
+def test_circuit_opens_and_half_open_recovers() -> None:
+    responses = [503, 503, 200]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status_code = responses.pop(0)
+        return httpx.Response(
+            status_code,
+            content=_catalogue() if status_code == 200 else b"{}",
+            headers={"content-type": "application/json"},
+            request=request,
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+        retries=0,
+        failure_threshold=2,
+        cooldown_seconds=0,
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        provider.fetch()
+    with pytest.raises(httpx.HTTPStatusError):
+        provider.fetch()
+    assert provider.status()["circuit"] == "open"
+    assert provider.fetch()
+    assert provider.status()["circuit"] == "closed"
+
+
+def test_open_circuit_rejects_request_during_cooldown() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            503, content=b"{}", headers={"content-type": "application/json"}, request=request
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+        retries=0,
+        failure_threshold=1,
+        cooldown_seconds=60,
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        provider.fetch()
+    with pytest.raises(CircuitOpenError):
+        provider.fetch()

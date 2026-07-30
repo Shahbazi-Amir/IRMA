@@ -14,6 +14,7 @@
 - ماشین‌حساب سود مرکب با واریز ماهانه و ارزش واقعی
 - مدل داده PostgreSQL با جایگزین SQLite و Migrationهای Alembic
 - Provider خودکار FIPIRAN و Provider دستی CSV با ثبت منبع، زمان، کیفیت و هش
+- Diagnostics امن، Circuit Breaker، fallback فایل رسمی و Backfill قابل Resume
 - زیرساخت چندبازاری با تاریخچه شاخص، بازار ETF، تورم رسمی و شرایط بانکی تأییدشده
 - مقایسه کلاس‌های دارایی، ورود مرحله‌ای و تعادل مجدد قابل‌توضیح
 - API صندوق‌ها، وضعیت داده‌ها، بازار، Refresh مدیریتی و بک‌تست
@@ -88,6 +89,17 @@ Header: X-IRMA-Admin-Key
 ```bash
 python scripts/refresh_data.py
 ```
+
+تشخیص محدود و Backfill:
+
+```bash
+python scripts/diagnose_fipiran.py --catalog
+python scripts/backfill_fund_history.py --limit 10
+```
+
+جزئیات قرارداد، Sanitization و fallback در
+`docs/fipiran-provider.md`، `docs/provider-diagnostics.md` و
+`docs/provider-fallback.md` آمده است.
 
 ## Migration
 

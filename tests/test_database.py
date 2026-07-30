@@ -34,6 +34,11 @@ def test_all_required_tables_exist(session: Session) -> None:
         "bank_product_versions",
         "data_quality_events",
         "portfolio_rebalance_plans",
+        "provider_health_events",
+        "fund_field_provenance",
+        "fund_data_conflicts",
+        "backfill_runs",
+        "backfill_checkpoints",
     }
     assert required <= names
     assert required == set(Base.metadata.tables)
