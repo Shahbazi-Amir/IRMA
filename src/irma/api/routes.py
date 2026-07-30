@@ -27,18 +27,18 @@ from irma.domain.recommendation import AllocationRecommendation
 from irma.persistence.database import get_session
 from irma.persistence.models import (
     AssetPrice,
+    BackfillRun,
     BacktestMetric,
     BacktestRun,
-    BackfillRun,
     BankProduct,
     BankProductVersion,
     DataIngestionRun,
     DataQualityEvent,
     DataSource,
     Fund,
-    FundInstrumentMapping,
-    FundFieldProvenance,
     FundDataConflict,
+    FundFieldProvenance,
+    FundInstrumentMapping,
     FundMarketHistory,
     FundNavHistory,
     InflationObservation,
@@ -47,20 +47,20 @@ from irma.persistence.models import (
     MarketIndex,
     MarketIndexHistory,
     MarketInstrument,
-    RecommendationRun,
     ProviderHealthEvent,
+    RecommendationRun,
 )
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
-from irma.providers.placeholders import PROVIDERS
 from irma.providers.fipiran import FipiranFundProvider
+from irma.providers.placeholders import PROVIDERS
 from irma.services.backtests import execute_backtest
 from irma.services.data_refresh import (
     RefreshAlreadyRunningError,
     refresh_from_configured_csv,
     refresh_from_fipiran,
 )
-from irma.services.fund_rankings import rank_funds
 from irma.services.fund_backfill import backfill_fund_history
+from irma.services.fund_rankings import rank_funds
 from irma.services.multi_asset_refresh import (
     refresh_bank_products,
     refresh_inflation,

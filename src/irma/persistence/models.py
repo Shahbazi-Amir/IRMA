@@ -12,12 +12,12 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
-    Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
