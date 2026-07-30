@@ -1,5 +1,6 @@
 """API request and response schemas."""
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -35,3 +36,10 @@ class ScenarioRequest(BaseModel):
 class ScenarioResponse(BaseModel):
     assumption_notice: str
     results: list[ScenarioResult]
+
+
+class RebalanceRequest(BaseModel):
+    target_weights: dict[str, float]
+    current_weights: dict[str, float]
+    monthly_contribution_toman: Decimal = Field(default=Decimal(0), ge=0)
+    threshold_points: float = Field(default=5, gt=0, le=50)

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     admin_key: str | None = None
     api_base_url: str = "http://localhost:8000"
     fund_csv_path: str = "data/imports/funds.csv"
+    market_index_csv_path: str = "data/imports/market_indices.csv"
+    instrument_market_csv_path: str = "data/imports/market_instruments.csv"
+    inflation_csv_path: str = "data/imports/inflation.csv"
+    bank_product_csv_path: str = "data/imports/bank_products.csv"
     fund_provider: str = Field(default="csv", pattern="^(csv|fipiran)$")
     fipiran_base_url: str = "https://www.fipiran.com/services"
     fund_history_limit: int = Field(default=25, ge=0, le=500)

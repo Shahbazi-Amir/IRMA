@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,6 +16,7 @@ from irma.api.dependencies import require_admin_key
 from irma.api.schemas import (
     CompoundInterestRequest,
     CompoundInterestResponse,
+    RebalanceRequest,
     ScenarioRequest,
     ScenarioResponse,
 )
@@ -24,7 +25,24 @@ from irma.domain.finance import compound_with_contributions
 from irma.domain.profile import InvestorProfile
 from irma.domain.recommendation import AllocationRecommendation
 from irma.persistence.database import get_session
-from irma.persistence.models import AssetPrice, BacktestMetric, BacktestRun
+from irma.persistence.models import (
+    AssetPrice,
+    BacktestMetric,
+    BacktestRun,
+    BankProduct,
+    BankProductVersion,
+    DataSource,
+    Fund,
+    FundInstrumentMapping,
+    FundMarketHistory,
+    FundNavHistory,
+    InflationObservation,
+    InflationSeries,
+    InstrumentMarketHistory,
+    MarketIndex,
+    MarketIndexHistory,
+    MarketInstrument,
+)
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
 from irma.providers.placeholders import PROVIDERS
 from irma.services.backtests import execute_backtest
@@ -34,6 +52,13 @@ from irma.services.data_refresh import (
     refresh_from_fipiran,
 )
 from irma.services.fund_rankings import rank_funds
+from irma.services.multi_asset_refresh import (
+    refresh_bank_products,
+    refresh_inflation,
+    refresh_market_indices,
+    refresh_market_instruments,
+)
+from irma.services.portfolio_plans import rebalance_plan
 from irma.services.recommendations import create_recommendation
 from irma.trading_engine.backtest import BacktestRequest
 
@@ -44,6 +69,12 @@ SessionDependency = Annotated[Session, Depends(get_session)]
 @router.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "irma"}
+
+
+@router.get("/ready", tags=["system"])
+def readiness(session: SessionDependency) -> dict[str, str]:
+    session.execute(select(1))
+    return {"status": "ready", "database": "ok"}
 
 
 @router.get("/v1/info", tags=["system"])
@@ -73,6 +104,16 @@ def recommendations(
     profile: InvestorProfile, session: SessionDependency
 ) -> AllocationRecommendation:
     return create_recommendation(profile, session=session)
+
+
+@router.post("/v1/recommendations/rebalance", tags=["recommendations"])
+def recommendations_rebalance(request: RebalanceRequest) -> dict[str, object]:
+    return rebalance_plan(
+        target_weights=request.target_weights,
+        current_weights=request.current_weights,
+        monthly_contribution_toman=request.monthly_contribution_toman,
+        threshold_points=request.threshold_points,
+    )
 
 
 @router.post(
@@ -161,6 +202,308 @@ def market_summary(session: SessionDependency) -> dict[str, Any]:
     }
 
 
+@router.get("/v1/market/indices", tags=["market"])
+def market_indices(
+    session: SessionDependency,
+    index_code: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    quality: str | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict[str, Any]:
+    statement = (
+        select(MarketIndexHistory, MarketIndex, DataSource)
+        .join(MarketIndex, MarketIndex.id == MarketIndexHistory.market_index_id)
+        .outerjoin(DataSource, DataSource.id == MarketIndexHistory.source_id)
+        .order_by(MarketIndexHistory.valid_at.desc())
+    )
+    if index_code:
+        statement = statement.where(MarketIndex.index_code == index_code)
+    if date_from:
+        statement = statement.where(MarketIndexHistory.valid_at >= date_from)
+    if date_to:
+        statement = statement.where(MarketIndexHistory.valid_at <= date_to)
+    if quality:
+        statement = statement.where(MarketIndexHistory.quality_status == quality)
+    rows = session.execute(statement.offset(offset).limit(limit)).all()
+    return {
+        "items": [
+            {
+                "index_code": index.index_code,
+                "name_fa": index.name_fa,
+                "name_en": index.name_en,
+                "observation_date": history.valid_at,
+                "open": history.open_value,
+                "high": history.high_value,
+                "low": history.low_value,
+                "close": history.close_value,
+                "change": history.change_value,
+                "change_percent": history.change_percent,
+                "quality_status": history.quality_status,
+                "source_name": source.name if source else None,
+                "observed_at": history.observed_at,
+            }
+            for history, index, source in rows
+        ],
+        "count": len(rows),
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.get("/v1/market/indices/{index_code}", tags=["market"])
+def market_index_detail(index_code: str, session: SessionDependency) -> dict[str, Any]:
+    payload = market_indices(
+        session,
+        index_code=index_code,
+        date_from=None,
+        date_to=None,
+        quality=None,
+        offset=0,
+        limit=500,
+    )
+    if not payload["items"]:
+        raise HTTPException(status_code=404, detail="market index not found")
+    return payload
+
+
+@router.get("/v1/market/instruments", tags=["market"])
+def market_instruments(
+    session: SessionDependency,
+    instrument_type: str | None = None,
+    symbol: str | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict[str, Any]:
+    statement = (
+        select(InstrumentMarketHistory, MarketInstrument, DataSource)
+        .join(MarketInstrument, MarketInstrument.id == InstrumentMarketHistory.instrument_id)
+        .outerjoin(DataSource, DataSource.id == InstrumentMarketHistory.source_id)
+        .order_by(InstrumentMarketHistory.valid_at.desc())
+    )
+    if instrument_type:
+        statement = statement.where(MarketInstrument.instrument_type == instrument_type)
+    if symbol:
+        statement = statement.where(MarketInstrument.symbol == symbol)
+    rows = session.execute(statement.offset(offset).limit(limit)).all()
+    return {
+        "items": [
+            {
+                "instrument_id": instrument.id,
+                "stable_id": instrument.stable_id,
+                "symbol": instrument.symbol,
+                "name_fa": instrument.name_fa,
+                "instrument_type": instrument.instrument_type,
+                "date": history.valid_at,
+                "close": history.close_price,
+                "last": history.last_price,
+                "volume": history.volume,
+                "trade_value": history.trade_value,
+                "market_status": history.market_status,
+                "quality_status": history.quality_status,
+                "source_name": source.name if source else None,
+            }
+            for history, instrument, source in rows
+        ],
+        "count": len(rows),
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.get("/v1/market/instruments/{instrument_id}", tags=["market"])
+def market_instrument_detail(instrument_id: int, session: SessionDependency) -> dict[str, Any]:
+    instrument = session.get(MarketInstrument, instrument_id)
+    if instrument is None:
+        raise HTTPException(status_code=404, detail="market instrument not found")
+    latest = session.scalar(
+        select(InstrumentMarketHistory)
+        .where(InstrumentMarketHistory.instrument_id == instrument_id)
+        .order_by(InstrumentMarketHistory.valid_at.desc())
+    )
+    return {
+        "id": instrument.id,
+        "stable_id": instrument.stable_id,
+        "symbol": instrument.symbol,
+        "name_fa": instrument.name_fa,
+        "instrument_type": instrument.instrument_type,
+        "latest": {
+            "date": latest.valid_at,
+            "open": latest.open_price,
+            "high": latest.high_price,
+            "low": latest.low_price,
+            "close": latest.close_price,
+            "last": latest.last_price,
+            "volume": latest.volume,
+            "trade_value": latest.trade_value,
+            "market_status": latest.market_status,
+            "quality_status": latest.quality_status,
+        }
+        if latest
+        else None,
+    }
+
+
+@router.get("/v1/market/gold-funds", tags=["market"])
+def gold_funds(session: SessionDependency) -> dict[str, Any]:
+    funds = session.scalars(select(Fund).where(Fund.fund_type == "gold")).all()
+    items: list[dict[str, Any]] = []
+    for fund in funds:
+        nav = session.scalar(
+            select(FundNavHistory)
+            .where(FundNavHistory.fund_id == fund.id)
+            .order_by(FundNavHistory.valid_at.desc())
+        )
+        market = session.scalar(
+            select(FundMarketHistory)
+            .where(FundMarketHistory.fund_id == fund.id)
+            .order_by(FundMarketHistory.valid_at.desc())
+        )
+        mapping = session.scalar(
+            select(FundInstrumentMapping).where(FundInstrumentMapping.fund_id == fund.id)
+        )
+        premium = None
+        if nav and market and nav.nav and market.market_price:
+            premium = float(market.market_price / nav.nav - 1)
+        items.append(
+            {
+                "fund_id": fund.id,
+                "name_fa": fund.name_fa,
+                "symbol": fund.symbol,
+                "nav": nav.nav if nav else None,
+                "market_price": market.market_price if market else None,
+                "premium_discount": premium,
+                "volume": market.volume if market else None,
+                "trade_value": market.trade_value if market else None,
+                "quality_status": fund.quality_status,
+                "last_data_at": fund.last_data_at,
+                "mapping_status": mapping.match_status if mapping else "unmatched",
+            }
+        )
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/v1/economy/inflation", tags=["economy"])
+def inflation(
+    session: SessionDependency,
+    indicator_code: str | None = None,
+    limit: int = Query(default=120, ge=1, le=500),
+) -> dict[str, Any]:
+    statement = (
+        select(InflationObservation, InflationSeries, DataSource)
+        .join(InflationSeries, InflationSeries.id == InflationObservation.series_id)
+        .outerjoin(DataSource, DataSource.id == InflationObservation.source_id)
+        .order_by(InflationObservation.publication_date.desc())
+    )
+    if indicator_code:
+        statement = statement.where(InflationSeries.indicator_code == indicator_code)
+    rows = session.execute(statement.limit(limit)).all()
+    return {
+        "items": [
+            {
+                "indicator_code": series.indicator_code,
+                "indicator_name": series.indicator_name,
+                "base_year": series.base_year,
+                "period": observation.period,
+                "period_type": observation.period_type,
+                "monthly_inflation": observation.monthly_inflation,
+                "point_to_point_inflation": observation.point_to_point_inflation,
+                "annual_inflation": observation.annual_inflation,
+                "consumer_price_index": observation.consumer_price_index,
+                "publication_date": observation.publication_date,
+                "quality_status": observation.quality_status,
+                "source_name": source.name if source else None,
+            }
+            for observation, series, source in rows
+        ],
+        "count": len(rows),
+    }
+
+
+@router.get("/v1/bank-products", tags=["banking"])
+def bank_products(
+    session: SessionDependency,
+    include_unverified: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    statement = (
+        select(BankProductVersion, BankProduct, DataSource)
+        .join(BankProduct, BankProduct.id == BankProductVersion.bank_product_id)
+        .outerjoin(DataSource, DataSource.id == BankProductVersion.source_id)
+        .order_by(BankProductVersion.valid_from.desc())
+    )
+    if not include_unverified:
+        statement = statement.where(
+            BankProductVersion.verification_status.in_(("official_verified", "manual_verified")),
+            (BankProductVersion.valid_until.is_(None))
+            | (BankProductVersion.valid_until >= date.today()),
+        )
+    rows = session.execute(statement.limit(limit)).all()
+    return {
+        "items": [
+            {
+                "bank_name": product.bank_name,
+                "product_name": product.product_name,
+                "product_type": version.product_type,
+                "nominal_rate": version.nominal_rate,
+                "effective_rate": version.effective_rate,
+                "minimum_deposit_toman": version.minimum_deposit_toman,
+                "term_months": version.term_months,
+                "valid_from": version.valid_from,
+                "valid_until": version.valid_until,
+                "verification_status": version.verification_status,
+                "source_url": version.source_url,
+                "source_name": source.name if source else None,
+            }
+            for version, product, source in rows
+        ],
+        "count": len(rows),
+        "notice": "Only currently verified terms are returned by default; rates are not forecasts.",
+    }
+
+
+@router.get("/v1/asset-classes/comparison", tags=["analytics"])
+def asset_class_comparison(session: SessionDependency) -> dict[str, Any]:
+    sources = {
+        source.name: source
+        for source in session.scalars(select(DataSource).where(DataSource.status == "valid")).all()
+    }
+    classes = [
+        "cash",
+        "bank_deposit",
+        "fixed_income_fund",
+        "gold_fund",
+        "equity_fund",
+        "index_fund",
+        "mixed_fund",
+        "leveraged_fund",
+        "market_index",
+        "short_term_trading",
+    ]
+    latest_observations = [
+        source.last_valid_observation_at
+        for source in sources.values()
+        if source.last_valid_observation_at is not None
+    ]
+    return {
+        "items": [
+            {
+                "asset_class": item,
+                "historical_return": None,
+                "real_return": None,
+                "volatility": None,
+                "maximum_drawdown": None,
+                "quality_status": "valid" if sources else "missing",
+                "latest_data_at": max(latest_observations, default=None),
+                "value_kind": "historical_observation",
+            }
+            for item in classes
+        ],
+        "notice": "Missing metrics stay null; no future return is inferred.",
+    }
+
+
 @router.get("/v1/data-sources/status", tags=["data"])
 def source_status(session: SessionDependency) -> dict[str, Any]:
     return {
@@ -203,9 +546,40 @@ def backtest_detail(backtest_id: int, session: SessionDependency) -> dict[str, A
     dependencies=[Depends(require_admin_key)],
     tags=["admin"],
 )
-def admin_refresh(session: SessionDependency) -> dict[str, int | str]:
+def admin_refresh(
+    session: SessionDependency,
+    dataset: str = Query(
+        default="funds",
+        pattern="^(funds|fund_history|market_indices|market_instruments|inflation|bank_products|all)$",
+    ),
+) -> dict[str, Any]:
     settings = get_settings()
     try:
+        if dataset == "market_indices":
+            return refresh_market_indices(session, settings.market_index_csv_path)
+        if dataset == "market_instruments":
+            return refresh_market_instruments(session, settings.instrument_market_csv_path)
+        if dataset == "inflation":
+            return refresh_inflation(session, settings.inflation_csv_path)
+        if dataset == "bank_products":
+            return refresh_bank_products(session, settings.bank_product_csv_path)
+        if dataset == "all":
+            results: dict[str, Any] = {}
+            jobs = {
+                "market_indices": (refresh_market_indices, settings.market_index_csv_path),
+                "market_instruments": (
+                    refresh_market_instruments,
+                    settings.instrument_market_csv_path,
+                ),
+                "inflation": (refresh_inflation, settings.inflation_csv_path),
+                "bank_products": (refresh_bank_products, settings.bank_product_csv_path),
+            }
+            for name, (refresh, path) in jobs.items():
+                try:
+                    results[name] = refresh(session, path)
+                except (FileNotFoundError, ValueError) as exc:
+                    results[name] = {"status": "failed", "error": str(exc)}
+            return {"dataset": "all", "results": results}
         if settings.fund_provider == "fipiran":
             return refresh_from_fipiran(
                 session,

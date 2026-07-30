@@ -63,3 +63,74 @@ class FundNavRecord:
 @runtime_checkable
 class HistoricalFundProvider(FundProvider, Protocol):
     def fetch_nav_history(self, external_id: str) -> list[FundNavRecord]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MarketIndexRecord:
+    index_code: str
+    name_fa: str
+    name_en: str | None
+    observation_date: datetime
+    open_value: float | None
+    high_value: float | None
+    low_value: float | None
+    close_value: float | None
+    change_value: float | None
+    change_percent: float | None
+    metadata: ProviderMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentMarketRecord:
+    stable_id: str
+    symbol: str
+    name_fa: str
+    instrument_type: str
+    observation_date: datetime
+    open_price: float | None
+    high_price: float | None
+    low_price: float | None
+    close_price: float | None
+    last_price: float | None
+    volume: float | None
+    trade_value: float | None
+    trade_count: int | None
+    best_bid: float | None
+    best_ask: float | None
+    market_status: str | None
+    metadata: ProviderMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class InflationRecord:
+    indicator_code: str
+    indicator_name: str
+    period: str
+    period_type: str
+    monthly_inflation: float | None
+    point_to_point_inflation: float | None
+    annual_inflation: float | None
+    consumer_price_index: float | None
+    base_year: str
+    publication_date: str
+    metadata: ProviderMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class BankProductRecord:
+    bank_name: str
+    product_name: str
+    product_type: str
+    nominal_rate: float | None
+    effective_rate: float | None
+    minimum_deposit_toman: float | None
+    term_months: int | None
+    early_withdrawal_rate: float | None
+    payment_frequency: str | None
+    conditions_summary: str | None
+    source_url: str
+    publication_date: str
+    valid_from: str
+    valid_until: str | None
+    verification_status: str
+    metadata: ProviderMetadata

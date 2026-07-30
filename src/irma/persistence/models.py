@@ -6,7 +6,18 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -207,3 +218,136 @@ class BacktestMetric(Base):
     metric_name: Mapped[str] = mapped_column(String(80))
     value: Mapped[Decimal | None] = mapped_column(Numeric(24, 10), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class MarketIndex(Base, TimestampMixin):
+    __tablename__ = "market_indices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    index_code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name_fa: Mapped[str] = mapped_column(String(200))
+    name_en: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MarketIndexHistory(Base, ProvenanceMixin):
+    __tablename__ = "market_index_history"
+    __table_args__ = (UniqueConstraint("market_index_id", "valid_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_index_id: Mapped[int] = mapped_column(ForeignKey("market_indices.id"), index=True)
+    open_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    high_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    low_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    close_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    change_value: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    change_percent: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+    data_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class MarketInstrument(Base, TimestampMixin):
+    __tablename__ = "market_instruments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    stable_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(80), index=True)
+    name_fa: Mapped[str] = mapped_column(String(200))
+    instrument_type: Mapped[str] = mapped_column(String(40), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+
+
+class InstrumentMarketHistory(Base, ProvenanceMixin):
+    __tablename__ = "instrument_market_history"
+    __table_args__ = (UniqueConstraint("instrument_id", "valid_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("market_instruments.id"), index=True)
+    open_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    high_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    low_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    close_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    last_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(28, 4), nullable=True)
+    trade_value: Mapped[Decimal | None] = mapped_column(Numeric(28, 4), nullable=True)
+    trade_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    best_bid: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    best_ask: Mapped[Decimal | None] = mapped_column(Numeric(24, 4), nullable=True)
+    market_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+
+
+class FundInstrumentMapping(Base, TimestampMixin):
+    __tablename__ = "fund_instrument_mappings"
+    __table_args__ = (UniqueConstraint("fund_id", "instrument_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("funds.id"), index=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("market_instruments.id"), index=True)
+    match_status: Mapped[str] = mapped_column(String(40), index=True)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(6, 5), nullable=True)
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class InflationSeries(Base, TimestampMixin):
+    __tablename__ = "inflation_series"
+    __table_args__ = (UniqueConstraint("indicator_code", "base_year"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    indicator_code: Mapped[str] = mapped_column(String(80), index=True)
+    indicator_name: Mapped[str] = mapped_column(String(200))
+    base_year: Mapped[str] = mapped_column(String(40))
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+
+
+class InflationObservation(Base, ProvenanceMixin):
+    __tablename__ = "inflation_observations"
+    __table_args__ = (UniqueConstraint("series_id", "period"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_id: Mapped[int] = mapped_column(ForeignKey("inflation_series.id"), index=True)
+    period: Mapped[str] = mapped_column(String(40), index=True)
+    period_type: Mapped[str] = mapped_column(String(20))
+    monthly_inflation: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    point_to_point_inflation: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    annual_inflation: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    consumer_price_index: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+    publication_date: Mapped[date] = mapped_column(Date)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+
+
+class BankProductVersion(Base, ProvenanceMixin):
+    __tablename__ = "bank_product_versions"
+    __table_args__ = (UniqueConstraint("bank_product_id", "valid_from"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bank_product_id: Mapped[int] = mapped_column(ForeignKey("bank_products.id"), index=True)
+    product_type: Mapped[str] = mapped_column(String(60))
+    nominal_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    effective_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    minimum_deposit_toman: Mapped[Decimal | None] = mapped_column(Numeric(24, 2), nullable=True)
+    term_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    early_withdrawal_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    payment_frequency: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    conditions_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str] = mapped_column(String(500))
+    publication_date: Mapped[date] = mapped_column(Date)
+    valid_from: Mapped[date] = mapped_column(Date, index=True)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(40), index=True)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+
+
+class DataQualityEvent(Base):
+    __tablename__ = "data_quality_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+    dataset: Mapped[str] = mapped_column(String(80), index=True)
+    record_identifier: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    rule_code: Mapped[str] = mapped_column(String(80), index=True)
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class PortfolioRebalancePlan(Base):
+    __tablename__ = "portfolio_rebalance_plans"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    method: Mapped[str] = mapped_column(String(40))
+    threshold_points: Mapped[Decimal] = mapped_column(Numeric(8, 4))
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON)

@@ -24,6 +24,16 @@ def test_all_required_tables_exist(session: Session) -> None:
         "strategy_definitions",
         "backtest_runs",
         "backtest_metrics",
+        "market_indices",
+        "market_index_history",
+        "market_instruments",
+        "instrument_market_history",
+        "fund_instrument_mappings",
+        "inflation_series",
+        "inflation_observations",
+        "bank_product_versions",
+        "data_quality_events",
+        "portfolio_rebalance_plans",
     }
     assert required <= names
     assert required == set(Base.metadata.tables)
