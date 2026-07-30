@@ -136,6 +136,14 @@ def test_provider_reuses_session_and_records_success() -> None:
     assert provider.status()["last_success_at"] is not None
 
 
+def test_provider_context_manager_preserves_injected_client() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    with FipiranFundProvider(client=client) as provider:
+        assert provider.client is client
+    assert client.is_closed is False
+    client.close()
+
+
 @pytest.mark.parametrize(
     ("content_type", "body", "error"),
     [
