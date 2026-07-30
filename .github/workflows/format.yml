@@ -1,0 +1,37 @@
+name: Format IRMA source
+
+on:
+  push:
+    branches:
+      - agent/deployable-irma-v1
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/deployable-irma-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip ruff
+      - name: Apply Ruff fixes
+        run: |
+          ruff check --fix --unsafe-fixes .
+          ruff format .
+      - name: Commit formatted source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Format deployable IRMA source"
+          git push origin HEAD:agent/deployable-irma-v1
