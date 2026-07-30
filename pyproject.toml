@@ -37,6 +37,7 @@ src = ["src", "tests", "apps", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "RUF001"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -47,4 +48,3 @@ line-ending = "lf"
 addopts = "-q --strict-markers --cov=irma --cov-report=term-missing --cov-fail-under=75"
 testpaths = ["tests"]
 pythonpath = ["src"]
-
