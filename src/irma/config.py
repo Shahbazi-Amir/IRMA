@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     admin_key: str | None = None
     api_base_url: str = "http://localhost:8000"
     fund_csv_path: str = "data/imports/funds.csv"
+    fund_provider: str = Field(default="csv", pattern="^(csv|fipiran)$")
+    fipiran_base_url: str = "https://www.fipiran.com/services"
+    fund_history_limit: int = Field(default=25, ge=0, le=500)
+    provider_min_interval_seconds: float = Field(default=0.25, ge=0, le=10)
     refresh_enabled: bool = False
     refresh_interval_minutes: int = Field(default=1440, ge=15)
     provider_timeout_seconds: int = Field(default=15, ge=1, le=120)

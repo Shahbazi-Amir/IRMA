@@ -13,7 +13,7 @@
 - تبدیل ریال/تومان، بازده، CAGR، تورم، بازده واقعی، نوسان، افت، Sharpe و Sortino
 - ماشین‌حساب سود مرکب با واریز ماهانه و ارزش واقعی
 - مدل داده PostgreSQL با جایگزین SQLite و Migrationهای Alembic
-- Provider دستی CSV با ثبت منبع، زمان مشاهده، کیفیت و هش فایل
+- Provider خودکار FIPIRAN و Provider دستی CSV با ثبت منبع، زمان، کیفیت و هش
 - API صندوق‌ها، وضعیت داده‌ها، بازار، Refresh مدیریتی و بک‌تست
 - بک‌تست long-only پژوهشی با هزینه، Slippage، فیلتر نقدشوندگی و اجرای دوره بعد
 - Docker Compose برای API، Web و PostgreSQL
@@ -55,7 +55,14 @@ IRMA_API_BASE_URL=http://localhost:8000 streamlit run apps/streamlit_app/app.py
 
 ## ورود داده صندوق‌ها
 
-IRMA هیچ رکورد نمونه را به‌عنوان داده واقعی ثبت نمی‌کند. فایل CSV معتبر را در `data/imports/funds.csv` قرار دهید. ستون‌های الزامی:
+IRMA هیچ رکورد نمونه را به‌عنوان داده واقعی ثبت نمی‌کند. برای FIPIRAN:
+
+```env
+IRMA_FUND_PROVIDER=fipiran
+IRMA_FUND_HISTORY_LIMIT=25
+```
+
+یا فایل CSV معتبر را در `data/imports/funds.csv` قرار دهید. ستون‌های الزامی:
 
 ```text
 name_fa,fund_type,source_identifier,observed_at
@@ -92,6 +99,7 @@ alembic downgrade -1
 ```bash
 ruff check .
 ruff format --check .
+mypy
 pytest
 python -m compileall src tests
 python scripts/check_repo_safety.py
@@ -111,6 +119,8 @@ python scripts/check_repo_safety.py
 - `IRMA_CORS_ORIGINS`: Originهای مجاز با کاما
 - `IRMA_ADMIN_KEY`: محافظ Refresh مدیریتی؛ بدون مقدار Endpoint غیرفعال است
 - `IRMA_FUND_CSV_PATH`: مسیر CSV صندوق‌ها
+- `IRMA_FUND_PROVIDER`: یکی از `csv` یا `fipiran`
+- `IRMA_FUND_HISTORY_LIMIT`: سقف تاریخچه صندوق‌ها در هر Refresh
 - `IRMA_REFRESH_ENABLED`: فعال‌سازی Worker زمان‌بندی‌شده
 - `IRMA_REFRESH_INTERVAL_MINUTES`: فاصله Refresh
 - `IRMA_API_BASE_URL`: نشانی API برای Streamlit

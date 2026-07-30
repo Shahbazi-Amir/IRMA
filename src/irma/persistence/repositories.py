@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from irma.persistence.models import DataSource, Fund, FundMetric
+from irma.persistence.models import DataSource, Fund, FundMetric, FundNavHistory
 
 
 def list_funds(
@@ -21,21 +21,39 @@ def list_funds(
     if query:
         statement = statement.where(Fund.name_fa.contains(query))
     funds = session.scalars(statement).all()
-    return [
-        {
-            "id": fund.id,
-            "symbol": fund.symbol,
-            "name_fa": fund.name_fa,
-            "fund_type": fund.fund_type,
-            "inception_date": fund.inception_date,
-            "is_etf": fund.is_etf,
-            "manager": fund.manager,
-            "market_maker": fund.market_maker,
-            "quality_status": fund.quality_status,
-            "last_data_at": fund.last_data_at,
-        }
-        for fund in funds
-    ]
+    results = []
+    for fund in funds:
+        latest_nav = session.scalar(
+            select(FundNavHistory)
+            .where(FundNavHistory.fund_id == fund.id)
+            .order_by(FundNavHistory.valid_at.desc())
+            .limit(1)
+        )
+        results.append(
+            {
+                "id": fund.id,
+                "external_id": fund.external_id,
+                "symbol": fund.symbol,
+                "name_fa": fund.name_fa,
+                "fund_type": fund.fund_type,
+                "inception_date": fund.inception_date,
+                "is_etf": fund.is_etf,
+                "manager": fund.manager,
+                "market_maker": fund.market_maker,
+                "is_active": fund.is_active,
+                "asset_allocation": fund.asset_allocation_json,
+                "latest_nav": float(latest_nav.nav)
+                if latest_nav is not None and latest_nav.nav is not None
+                else None,
+                "total_net_assets": float(latest_nav.total_net_assets)
+                if latest_nav is not None and latest_nav.total_net_assets is not None
+                else None,
+                "quality_status": fund.quality_status,
+                "last_data_at": fund.last_data_at,
+                "source_id": fund.source_id,
+            }
+        )
+    return results
 
 
 def get_fund(session: Session, fund_id: int) -> dict[str, Any] | None:

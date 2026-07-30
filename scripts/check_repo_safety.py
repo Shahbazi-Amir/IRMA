@@ -7,7 +7,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 5 * 1024 * 1024
-IGNORE_PARTS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache"}
+IGNORE_PARTS = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+}
 PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),

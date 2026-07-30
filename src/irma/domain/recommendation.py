@@ -73,6 +73,15 @@ class DataUse(BaseModel):
     note: str
 
 
+class FundSuggestion(BaseModel):
+    fund_id: int
+    name_fa: str
+    symbol: str | None
+    score: float
+    ranking_version: str
+    reason: str
+
+
 class AllocationItem(BaseModel):
     category: str
     percent: int = Field(ge=0, le=100)
@@ -82,6 +91,7 @@ class AllocationItem(BaseModel):
     liquidity: str
     suggested_holding: str
     entry_method: str
+    instruments: list[FundSuggestion] = Field(default_factory=list)
 
 
 class AllocationRecommendation(BaseModel):

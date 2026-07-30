@@ -41,6 +41,7 @@ class FlakyProvider:
         now = datetime.now(UTC)
         return [
             FundRecord(
+                external_id="TEST-1",
                 name_fa="صندوق منبع‌دار",
                 symbol="TEST",
                 fund_type="gold",
@@ -49,8 +50,12 @@ class FlakyProvider:
                 nav=1000,
                 market_price=1010,
                 volume=100000,
+                trade_value=101000000,
+                total_net_assets=500000000,
                 manager="مدیر",
                 market_maker=None,
+                is_active=True,
+                asset_allocation={"commodity": 95.0},
                 metadata=ProviderMetadata(
                     source_name="test-source",
                     source_identifier="official:test",
