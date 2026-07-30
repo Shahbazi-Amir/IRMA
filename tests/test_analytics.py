@@ -60,10 +60,30 @@ def test_young_fund_is_penalized() -> None:
 
 def test_scenarios_require_three_named_assumptions() -> None:
     assumptions = [
-        ScenarioAssumption(name="pessimistic", annual_return=-0.1, annual_inflation=0.5, possible_drawdown=0.3, uncertainty="high"),
-        ScenarioAssumption(name="base", annual_return=0.2, annual_inflation=0.35, possible_drawdown=0.2, uncertainty="high"),
-        ScenarioAssumption(name="optimistic", annual_return=0.4, annual_inflation=0.25, possible_drawdown=0.15, uncertainty="very_high"),
+        ScenarioAssumption(
+            name="pessimistic",
+            annual_return=-0.1,
+            annual_inflation=0.5,
+            possible_drawdown=0.3,
+            uncertainty="high",
+        ),
+        ScenarioAssumption(
+            name="base",
+            annual_return=0.2,
+            annual_inflation=0.35,
+            possible_drawdown=0.2,
+            uncertainty="high",
+        ),
+        ScenarioAssumption(
+            name="optimistic",
+            annual_return=0.4,
+            annual_inflation=0.25,
+            possible_drawdown=0.15,
+            uncertainty="very_high",
+        ),
     ]
-    results = calculate_scenarios(principal=1_000_000, monthly_contribution=0, months=12, assumptions=assumptions)
+    results = calculate_scenarios(
+        principal=1_000_000, monthly_contribution=0, months=12, assumptions=assumptions
+    )
     assert [item.name for item in results] == ["pessimistic", "base", "optimistic"]
     assert results[0].nominal_value < results[2].nominal_value

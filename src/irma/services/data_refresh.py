@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,7 +36,9 @@ def _parse_date(value: str | None) -> date | None:
 
 
 class RefreshCoordinator:
-    def __init__(self, *, max_retries: int = 2, sleep: Callable[[float], None] = time.sleep) -> None:
+    def __init__(
+        self, *, max_retries: int = 2, sleep: Callable[[float], None] = time.sleep
+    ) -> None:
         self.max_retries = max_retries
         self.sleep = sleep
 
@@ -124,7 +126,9 @@ class RefreshCoordinator:
                                 if record.market_price is not None
                                 else None
                             ),
-                            volume=Decimal(str(record.volume)) if record.volume is not None else None,
+                            volume=Decimal(str(record.volume))
+                            if record.volume is not None
+                            else None,
                             source_id=source.id,
                             observed_at=record.metadata.observed_at or datetime.now(UTC),
                             valid_at=(record.metadata.observed_at or datetime.now(UTC)).date(),
@@ -138,7 +142,11 @@ class RefreshCoordinator:
             run.finished_at = datetime.now(UTC)
             session.commit()
             logger.info("fund refresh completed", extra={"records_written": written})
-            return {"status": "success", "records_received": len(records), "records_written": written}
+            return {
+                "status": "success",
+                "records_received": len(records),
+                "records_written": written,
+            }
         except Exception as exc:
             session.rollback()
             current = session.get(DataIngestionRun, run.id)

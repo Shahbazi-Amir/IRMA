@@ -29,7 +29,7 @@ from irma.providers.placeholders import PROVIDERS
 from irma.services.backtests import execute_backtest
 from irma.services.data_refresh import RefreshAlreadyRunningError, refresh_from_configured_csv
 from irma.services.recommendations import create_recommendation
-from irma.trading_engine.backtest import BacktestRequest, BacktestResult
+from irma.trading_engine.backtest import BacktestRequest
 
 router = APIRouter()
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -63,7 +63,9 @@ def info() -> dict[str, Any]:
     response_model=AllocationRecommendation,
     tags=["recommendations"],
 )
-def recommendations(profile: InvestorProfile, session: SessionDependency) -> AllocationRecommendation:
+def recommendations(
+    profile: InvestorProfile, session: SessionDependency
+) -> AllocationRecommendation:
     return create_recommendation(profile, session=session)
 
 
@@ -142,7 +144,9 @@ def fund_detail(fund_id: int, session: SessionDependency) -> dict[str, Any]:
 
 @router.get("/v1/market/summary", tags=["market"])
 def market_summary(session: SessionDependency) -> dict[str, Any]:
-    latest = session.scalars(select(AssetPrice).order_by(AssetPrice.observed_at.desc()).limit(20)).all()
+    latest = session.scalars(
+        select(AssetPrice).order_by(AssetPrice.observed_at.desc()).limit(20)
+    ).all()
     return {
         "data_available": bool(latest),
         "observed_at": max((item.observed_at for item in latest), default=None),
@@ -191,7 +195,8 @@ def backtest_detail(backtest_id: int, session: SessionDependency) -> dict[str, A
         "input_hash": run.input_hash,
         "warnings": run.warnings_json,
         "metrics": {
-            item.metric_name: float(item.value) if item.value is not None else None for item in metrics
+            item.metric_name: float(item.value) if item.value is not None else None
+            for item in metrics
         },
     }
 

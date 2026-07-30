@@ -8,10 +8,22 @@ from irma.persistence.repositories import data_source_status
 def test_all_required_tables_exist(session: Session) -> None:
     names = set(inspect(session.get_bind()).get_table_names())
     required = {
-        "data_sources", "data_ingestion_runs", "assets", "asset_prices", "funds",
-        "fund_nav_history", "fund_market_history", "fund_metrics", "bank_products",
-        "economic_indicators", "investor_profiles", "recommendation_runs",
-        "recommendation_allocations", "strategy_definitions", "backtest_runs", "backtest_metrics",
+        "data_sources",
+        "data_ingestion_runs",
+        "assets",
+        "asset_prices",
+        "funds",
+        "fund_nav_history",
+        "fund_market_history",
+        "fund_metrics",
+        "bank_products",
+        "economic_indicators",
+        "investor_profiles",
+        "recommendation_runs",
+        "recommendation_allocations",
+        "strategy_definitions",
+        "backtest_runs",
+        "backtest_metrics",
     }
     assert required <= names
     assert required == set(Base.metadata.tables)

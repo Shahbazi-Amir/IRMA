@@ -37,7 +37,7 @@ class BacktestRequest(BaseModel):
     maximum_spread_percent: float = Field(default=0.05, ge=0, le=1)
 
     @model_validator(mode="after")
-    def validate_windows(self) -> "BacktestRequest":
+    def validate_windows(self) -> BacktestRequest:
         if self.fast_window >= self.slow_window:
             raise ValueError("fast_window must be less than slow_window")
         if len(self.bars) <= self.slow_window + 2:
@@ -102,7 +102,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
     invested_periods = 0
     closes_seen: list[float] = []
 
-    for index, bar in enumerate(request.bars):
+    for _index, bar in enumerate(request.bars):
         # The decision for this bar is calculated only from closes available before this bar.
         desired_position = _signal(
             request.strategy, closes_seen, request.fast_window, request.slow_window
@@ -113,7 +113,7 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
             and bar.trade_value >= request.minimum_trade_value
             and bar.spread_percent <= request.maximum_spread_percent
         )
-        cost_rate = request.fee_percent + request.slippage_percent + bar.spread_percent / 2
+        request.fee_percent + request.slippage_percent + bar.spread_percent / 2
         if liquid and desired_position and position is None:
             execution_price = bar.close * (1 + request.slippage_percent + bar.spread_percent / 2)
             entry_cost = cash * request.fee_percent
@@ -127,7 +127,9 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
             exit_fee = gross * request.fee_percent
             cash = gross - exit_fee
             total_costs += exit_fee + position.quantity * (bar.close - execution_price)
-            trade_returns.append(cash / (position.quantity * position.entry_price + position.entry_cost) - 1)
+            trade_returns.append(
+                cash / (position.quantity * position.entry_price + position.entry_cost) - 1
+            )
             position = None
         equity = cash if position is None else position.quantity * bar.close
         if position is not None:
@@ -142,7 +144,9 @@ def run_backtest(request: BacktestRequest) -> BacktestResult:
         exit_fee = gross * request.fee_percent
         cash = gross - exit_fee
         total_costs += exit_fee + position.quantity * (last.close - execution_price)
-        trade_returns.append(cash / (position.quantity * position.entry_price + position.entry_cost) - 1)
+        trade_returns.append(
+            cash / (position.quantity * position.entry_price + position.entry_cost) - 1
+        )
         equity_curve[-1] = cash
 
     total_return = equity_curve[-1] / request.initial_capital - 1

@@ -124,8 +124,10 @@ def sortino_ratio(
     downside_deviation = math.sqrt(sum(downside) / len(downside))
     if math.isclose(downside_deviation, 0.0, abs_tol=1e-15):
         raise ValueError("Sortino ratio is undefined without downside volatility")
-    return (statistics.mean(period_returns) - target_return) / downside_deviation * math.sqrt(
-        periods_per_year
+    return (
+        (statistics.mean(period_returns) - target_return)
+        / downside_deviation
+        * math.sqrt(periods_per_year)
     )
 
 
@@ -191,9 +193,7 @@ def compound_with_contributions(
         elif month % 12 == 0:
             balance *= 1 + annual_rate
         inflation_factor = (1 + annual_inflation) ** (month / 12)
-        timeline.append(
-            {"month": month, "nominal": balance, "real": balance / inflation_factor}
-        )
+        timeline.append({"month": month, "nominal": balance, "real": balance / inflation_factor})
     contributions = principal + monthly_contribution * months
     final_real = float(timeline[-1]["real"])
     return CompoundResult(

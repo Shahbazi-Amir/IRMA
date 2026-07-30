@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from datetime import date
 from typing import Any
 
 import httpx
@@ -76,7 +75,9 @@ def page_home() -> None:
 
 def profile_form() -> dict[str, Any] | None:
     with st.form("investor-profile"):
-        capital = st.number_input("کل سرمایه (تومان)", min_value=1_000_000, value=50_000_000, step=500_000)
+        capital = st.number_input(
+            "کل سرمایه (تومان)", min_value=1_000_000, value=50_000_000, step=500_000
+        )
         monthly = st.number_input("سرمایه‌گذاری ماهانه (تومان)", min_value=0, value=0, step=100_000)
         horizon_labels = {
             "چندروزه": "days",
@@ -95,7 +96,12 @@ def profile_form() -> dict[str, Any] | None:
         liquidity_labels = {"کم": "low", "متوسط": "medium", "زیاد": "high"}
         liquidity_label = st.selectbox("نیاز به نقدشوندگی", list(liquidity_labels), index=1)
         needs_income = st.checkbox("نیاز به درآمد ماهانه")
-        experience_labels = {"بدون تجربه": "none", "مبتدی": "beginner", "متوسط": "intermediate", "حرفه‌ای": "advanced"}
+        experience_labels = {
+            "بدون تجربه": "none",
+            "مبتدی": "beginner",
+            "متوسط": "intermediate",
+            "حرفه‌ای": "advanced",
+        }
         experience_label = st.selectbox("تجربه سرمایه‌گذاری", list(experience_labels), index=1)
         trading_label = st.selectbox("تجربه معامله‌گری", list(experience_labels))
         style_labels = {"غیرفعال": "passive", "متعادل": "balanced", "فعال": "active"}
@@ -228,7 +234,9 @@ def page_compound() -> None:
 def page_short_term() -> None:
     st.title("تحلیل کوتاه‌مدت پژوهشی")
     st.warning("این بخش فقط بک‌تست و Paper Trading است و سیگنال قطعی خرید یا فروش تولید نمی‌کند.")
-    st.write("برای اجرای بک‌تست، داده معتبر روزانه شامل تاریخ، قیمت پایانی، حجم، ارزش معاملات و قابلیت معامله لازم است.")
+    st.write(
+        "برای اجرای بک‌تست، داده معتبر روزانه شامل تاریخ، قیمت پایانی، حجم، ارزش معاملات و قابلیت معامله لازم است."
+    )
     st.write("استراتژی‌ها: میانگین متحرک، مومنتوم، بازگشت به میانگین و شکست محدوده.")
     st.info("در نسخه فعلی داده بازار داخلی به‌صورت خودکار متصل نیست؛ API بک‌تست ورودی صریح می‌پذیرد.")
 

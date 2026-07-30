@@ -64,7 +64,9 @@ def calculate_fund_analytics(
     return FundAnalytics(
         total_return=total,
         cagr=cagr,
-        real_total_return=real_return(total, inflation_rate) if inflation_rate is not None else None,
+        real_total_return=real_return(total, inflation_rate)
+        if inflation_rate is not None
+        else None,
         volatility=annual_volatility,
         maximum_drawdown=maximum_drawdown(nav_values),
         recovery_periods=recovery_period(nav_values),

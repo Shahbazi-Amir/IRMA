@@ -65,7 +65,9 @@ class FlakyProvider:
 
 def test_refresh_retries_and_persists(session: Session) -> None:
     provider = FlakyProvider()
-    result = RefreshCoordinator(max_retries=2, sleep=lambda _: None).refresh_funds(session, provider)
+    result = RefreshCoordinator(max_retries=2, sleep=lambda _: None).refresh_funds(
+        session, provider
+    )
     assert provider.calls == 3
     assert result["records_written"] == 1
     assert session.scalar(select(Fund).where(Fund.symbol == "TEST")) is not None

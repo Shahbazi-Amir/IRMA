@@ -53,7 +53,9 @@ def test_liquidity_filter_prevents_trading() -> None:
 
 def test_future_bar_change_does_not_change_prior_equity() -> None:
     original = bars()
-    request = BacktestRequest(strategy="moving_average", bars=original, fast_window=5, slow_window=20)
+    request = BacktestRequest(
+        strategy="moving_average", bars=original, fast_window=5, slow_window=20
+    )
     first = run_backtest(request)
     changed = bars()
     changed[-1] = changed[-1].model_copy(update={"close": changed[-1].close * 10})

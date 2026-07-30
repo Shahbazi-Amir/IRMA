@@ -7,8 +7,15 @@ def test_streamlit_app_parses_and_contains_required_pages() -> None:
     text = path.read_text(encoding="utf-8")
     ast.parse(text)
     for page in [
-        "خانه", "پروفایل سرمایه‌گذار", "پیشنهاد سبد", "مقایسه صندوق‌ها", "سود مرکب",
-        "تحلیل کوتاه‌مدت", "تحلیل بلندمدت", "وضعیت داده‌ها", "درباره و روش‌شناسی",
+        "خانه",
+        "پروفایل سرمایه‌گذار",
+        "پیشنهاد سبد",
+        "مقایسه صندوق‌ها",
+        "سود مرکب",
+        "تحلیل کوتاه‌مدت",
+        "تحلیل بلندمدت",
+        "وضعیت داده‌ها",
+        "درباره و روش‌شناسی",
     ]:
         assert page in text
     assert "direction: rtl" in text

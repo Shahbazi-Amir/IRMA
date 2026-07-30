@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from irma.domain.profile import (
     HORIZON_MONTHS,
     InvestmentExperience,
-    InvestorProfile,
     InvestmentStyle,
+    InvestorProfile,
     LiquidityNeed,
     RiskTolerance,
     TradingExperience,
@@ -97,7 +97,7 @@ class AllocationRecommendation(BaseModel):
     disclaimer: str = DISCLAIMER_FA
 
     @model_validator(mode="after")
-    def validate_total(self) -> "AllocationRecommendation":
+    def validate_total(self) -> AllocationRecommendation:
         if sum(item.percent for item in self.allocations) != 100:
             raise ValueError("allocations must sum to 100")
         if any(item.percent < 0 for item in self.allocations):
@@ -115,7 +115,9 @@ DETAILS = {
 }
 
 
-def _transfer(allocations: dict[str, int], amount: int, sources: tuple[str, ...], target: str) -> int:
+def _transfer(
+    allocations: dict[str, int], amount: int, sources: tuple[str, ...], target: str
+) -> int:
     remaining = amount
     for source in sources:
         moved = min(allocations[source], remaining)
@@ -135,9 +137,7 @@ def _enforce_minimums(allocations: dict[str, int], capital: Decimal, rules: list
         amount = capital * Decimal(allocations[category]) / Decimal(100)
         if allocations[category] and amount < MINIMUM_EXECUTABLE_TOMAN[category]:
             removed += allocations[category]
-            rules.append(
-                f"Removed {category} because its amount was below the executable minimum."
-            )
+            rules.append(f"Removed {category} because its amount was below the executable minimum.")
             allocations[category] = 0
     allocations["fixed_income"] += removed
 
