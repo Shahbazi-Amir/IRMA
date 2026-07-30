@@ -1,0 +1,51 @@
+name: Live FIPIRAN Validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 3"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: irma_live_validation
+          POSTGRES_USER: irma
+          POSTGRES_PASSWORD: live-validation-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U irma -d irma_live_validation"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Migrate and run bounded live validation
+        env:
+          IRMA_APP_ENV: e2e
+          IRMA_DATABASE_URL: postgresql+psycopg://irma:live-validation-only@localhost:5432/irma_live_validation
+          IRMA_FUND_PROVIDER: fipiran
+          IRMA_FUND_HISTORY_LIMIT: "3"
+          IRMA_PROVIDER_MIN_INTERVAL_SECONDS: "1"
+          IRMA_PROVIDER_MAX_RETRIES: "2"
+        run: |
+          mkdir -p artifacts
+          alembic upgrade head
+          python scripts/live_data_validation.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-data-validation
+          path: artifacts/

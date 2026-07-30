@@ -156,3 +156,18 @@ FIPIRAN Provider خودکار فعال صندوق‌هاست. شاخص، قیم�
 تا زمان تثبیت قرارداد رسمی API فقط از CSV منبع‌دار و اعتبارسنجی‌شده وارد می‌شوند.
 رتبه‌بندی یا انتخاب ابزار بدون تاریخچه، تازگی، کیفیت و نگاشت قابل‌اعتماد متوقف می‌شود.
 هیچ فایل نمونه‌ای همراه محصول به‌عنوان داده واقعی وارد نمی‌شود.
+
+## اعتبارسنجی و Staging
+
+```bash
+python scripts/run_e2e.py
+```
+
+این دستور PostgreSQL، Migration، API و Streamlit را با Fixture صریحاً تستی و دو
+Refresh برای اثبات Idempotency اجرا می‌کند. Fixture فقط در محیط `e2e` مجاز است.
+Workflow جداگانه FIPIRAN محدود و زنده است و Fixture را جایگزین شکست منبع نمی‌کند.
+
+پس از Merge، GitHub Actions در صورت مجازبودن Package Permission، Imageهای
+`ghcr.io/shahbazi-amir/irma-api` و `ghcr.io/shahbazi-amir/irma-web` را با Tagهای
+`latest`، `main` و `sha-<commit>` منتشر می‌کند. Credential استقرار خارجی موجود نیست؛
+بنابراین فقط Ephemeral Staging در Actions آماده و اجرا می‌شود.

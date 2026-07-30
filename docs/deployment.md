@@ -17,3 +17,8 @@ docker compose --profile scheduler up --build
 ```
 
 قبل از ارتقا از Volume پایگاه داده Backup بگیرید و Migration را در Staging آزمایش کنید.
+
+پیکربندی Staging از `.env.staging.example` شروع می‌شود و Secret واقعی باید در Secret
+Store میزبان باشد. Fixture خاموش، CORS محدود و Debug غیرفعال بماند. برای Rollback از
+Tag مبتنی بر SHA استفاده و پس از تعویض نسخه `/ready` بررسی شود. جزئیات GHCR و
+Ephemeral Staging در `docs/staging-deployment.md` آمده است.

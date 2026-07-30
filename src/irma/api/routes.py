@@ -7,7 +7,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from httpx import HTTPError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from irma import __version__
@@ -31,6 +31,8 @@ from irma.persistence.models import (
     BacktestRun,
     BankProduct,
     BankProductVersion,
+    DataIngestionRun,
+    DataQualityEvent,
     DataSource,
     Fund,
     FundInstrumentMapping,
@@ -42,6 +44,7 @@ from irma.persistence.models import (
     MarketIndex,
     MarketIndexHistory,
     MarketInstrument,
+    RecommendationRun,
 )
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
 from irma.providers.placeholders import PROVIDERS
@@ -75,6 +78,37 @@ def health() -> dict[str, str]:
 def readiness(session: SessionDependency) -> dict[str, str]:
     session.execute(select(1))
     return {"status": "ready", "database": "ok"}
+
+
+@router.get("/metrics", tags=["system"])
+def metrics(session: SessionDependency) -> dict[str, int]:
+    """Low-cardinality operational metrics without exposing user data."""
+    successful = session.scalar(
+        select(func.count(DataIngestionRun.id)).where(DataIngestionRun.status == "success")
+    )
+    failed = session.scalar(
+        select(func.count(DataIngestionRun.id)).where(DataIngestionRun.status == "error")
+    )
+    stale = session.scalar(
+        select(func.count(DataQualityEvent.id)).where(DataQualityEvent.rule_code == "stale")
+    )
+    recommendations_count = session.scalar(select(func.count(RecommendationRun.id)))
+    withheld = session.scalar(
+        select(func.count(RecommendationRun.id)).where(RecommendationRun.warnings_json.is_not(None))
+    )
+    rejected = session.scalar(
+        select(func.count(DataQualityEvent.id)).where(
+            DataQualityEvent.severity.in_(("error", "critical"))
+        )
+    )
+    return {
+        "ingestion_success_total": successful or 0,
+        "ingestion_failure_total": failed or 0,
+        "stale_records_total": stale or 0,
+        "recommendations_total": recommendations_count or 0,
+        "recommendations_with_warnings_total": withheld or 0,
+        "records_rejected_total": rejected or 0,
+    }
 
 
 @router.get("/v1/info", tags=["system"])
