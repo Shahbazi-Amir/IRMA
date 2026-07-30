@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     refresh_interval_minutes: int = Field(default=1440, ge=15)
     provider_timeout_seconds: int = Field(default=15, ge=1, le=120)
     provider_max_retries: int = Field(default=2, ge=0, le=10)
+    fixture_data_enabled: bool = False
+    max_upload_bytes: int = Field(default=2_000_000, ge=1_024, le=20_000_000)
+    heavy_rate_limit_per_minute: int = Field(default=30, ge=1, le=1_000)
+
+    def fixtures_allowed(self) -> bool:
+        """Fixtures are never a production data source."""
+        return self.fixture_data_enabled and self.app_env in {"development", "test", "e2e"}
 
 
 @lru_cache

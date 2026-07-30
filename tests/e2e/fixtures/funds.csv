@@ -1,0 +1,2 @@
+external_id,name_fa,symbol,fund_type,is_etf,inception_date,nav,market_price,volume,trade_value,total_net_assets,manager,market_maker,is_active,stock,bond,cash,deposit,commodity,source_identifier,fetched_at,observed_at,unit,quality,data_version
+fixture-fixed-1,صندوق آزمون آفلاین,آزمون,fixed_income,false,2020-01-01,1000000,,,10000000,100000000,مدیر آزمون,,true,0,70,10,20,0,test-fixture,2026-07-30T00:00:00+00:00,2026-07-30T00:00:00+00:00,IRR,valid,sanitized-v1

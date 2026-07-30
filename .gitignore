@@ -13,6 +13,7 @@ venv/
 .env
 .env.*
 !.env.example
+!.env.staging.example
 .idea/
 .vscode/
 .DS_Store
@@ -24,3 +25,11 @@ data/imports/*.csv
 !data/imports/.gitkeep
 models/
 artifacts/
+backups/
+pip-build-env-*/
+pip-build-tracker-*/
+pip-metadata-*/
+pip-modern-metadata-*/
+pip-unpack-*/
+tmp*
+pytest-of-root/

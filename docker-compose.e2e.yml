@@ -1,0 +1,23 @@
+services:
+  database:
+    ports: []
+    environment:
+      POSTGRES_DB: irma_e2e
+      POSTGRES_PASSWORD: e2e-only-password
+    volumes:
+      - irma_e2e_data:/var/lib/postgresql/data
+  api:
+    environment:
+      IRMA_APP_ENV: e2e
+      IRMA_FIXTURE_DATA_ENABLED: "true"
+      IRMA_DATABASE_URL: postgresql+psycopg://irma:e2e-only-password@database:5432/irma_e2e
+      IRMA_FUND_PROVIDER: csv
+      IRMA_ADMIN_KEY: e2e-admin-key
+      IRMA_FUND_CSV_PATH: /app/tests/e2e/fixtures/funds.csv
+    volumes:
+      - ./tests/e2e/fixtures:/app/tests/e2e/fixtures:ro
+  web:
+    environment:
+      IRMA_APP_ENV: e2e
+volumes:
+  irma_e2e_data:

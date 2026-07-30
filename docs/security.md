@@ -10,3 +10,7 @@
 - برای Production به Secret Manager، TLS، Authentication واقعی، Rate Limit و Audit Log مرکزی نیاز است.
 - ADR آینده: احراز هویت OIDC، session کوتاه‌عمر، نقش `admin` و Audit مرکزی؛ این فاز
   حساب کاربری ناقص ایجاد نمی‌کند.
+- Fixture در Production ممنوع است. پاسخ‌ها Request ID، زمان پاسخ، `nosniff`، منع
+  Frame و Referrer Policy محدود دارند.
+- Endpoint آپلود عمومی وجود ندارد؛ هر Upload آینده باید محدودیت اندازه، Path
+  Traversal و CSV Formula Injection را پیش از ذخیره کنترل کند.
