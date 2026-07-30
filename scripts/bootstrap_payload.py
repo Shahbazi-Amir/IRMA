@@ -11,7 +11,7 @@ BOOTSTRAP = ROOT / ".bootstrap"
 GROUPS = [
     ("Add persistence and database migrations", "group1", 0),
     ("Implement analytics providers and recommendation services", "group2", 12),
-    ("Build Persian Streamlit and Docker deployment", "group3", 5),
+    ("Build Persian Streamlit and Docker deployment", "group3", 0),
     ("Add comprehensive application tests", "group4", 5),
     ("Expand documentation and continuous integration", "group5", 6),
 ]
