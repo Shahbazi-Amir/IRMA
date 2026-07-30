@@ -86,6 +86,9 @@ class AssetPrice(Base, ProvenanceMixin):
 class Fund(Base, TimestampMixin):
     __tablename__ = "funds"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str | None] = mapped_column(
+        String(80), unique=True, nullable=True, index=True
+    )
     symbol: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True, index=True)
     name_fa: Mapped[str] = mapped_column(String(200), index=True)
     fund_type: Mapped[str] = mapped_column(String(40), index=True)
@@ -93,6 +96,8 @@ class Fund(Base, TimestampMixin):
     is_etf: Mapped[bool] = mapped_column(Boolean, default=False)
     manager: Mapped[str | None] = mapped_column(String(200), nullable=True)
     market_maker: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    asset_allocation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
     quality_status: Mapped[str] = mapped_column(String(20), default="missing")
     last_data_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -20,11 +20,6 @@ class UnavailableProvider:
 
 PROVIDERS = [
     UnavailableProvider(
-        "official-securities-market",
-        "Automatic access is not enabled until endpoint stability, terms and schema are reviewed.",
-        "funds.csv",
-    ),
-    UnavailableProvider(
         "central-bank-rates",
         "No stable machine-readable adapter is configured in this release.",
         "bank-products.csv",

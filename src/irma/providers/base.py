@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class DataQuality(StrEnum):
@@ -29,6 +29,7 @@ class ProviderMetadata:
 
 @dataclass(frozen=True, slots=True)
 class FundRecord:
+    external_id: str
     name_fa: str
     symbol: str | None
     fund_type: str
@@ -37,10 +38,28 @@ class FundRecord:
     nav: float | None
     market_price: float | None
     volume: float | None
+    trade_value: float | None
+    total_net_assets: float | None
     manager: str | None
     market_maker: str | None
+    is_active: bool
+    asset_allocation: dict[str, float | None]
     metadata: ProviderMetadata
 
 
 class FundProvider(Protocol):
     def fetch(self) -> list[FundRecord]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class FundNavRecord:
+    external_id: str
+    observed_at: datetime
+    nav: float
+    total_net_assets: float | None
+    metadata: ProviderMetadata
+
+
+@runtime_checkable
+class HistoricalFundProvider(FundProvider, Protocol):
+    def fetch_nav_history(self, external_id: str) -> list[FundNavRecord]: ...

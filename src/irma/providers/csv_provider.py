@@ -45,6 +45,7 @@ class CsvFundProvider:
                     observed_at = observed_at.replace(tzinfo=UTC)
                 records.append(
                     FundRecord(
+                        external_id=row["source_identifier"].strip(),
                         name_fa=row["name_fa"].strip(),
                         symbol=(row.get("symbol") or "").strip() or None,
                         fund_type=row["fund_type"].strip(),
@@ -53,8 +54,12 @@ class CsvFundProvider:
                         nav=_optional_float(row.get("nav")),
                         market_price=_optional_float(row.get("market_price")),
                         volume=_optional_float(row.get("volume")),
+                        trade_value=_optional_float(row.get("trade_value")),
+                        total_net_assets=_optional_float(row.get("total_net_assets")),
                         manager=(row.get("manager") or "").strip() or None,
                         market_maker=(row.get("market_maker") or "").strip() or None,
+                        is_active=_optional_bool(row.get("is_active") or "true"),
+                        asset_allocation={},
                         metadata=ProviderMetadata(
                             source_name="manual-fund-csv",
                             source_identifier=row["source_identifier"].strip(),

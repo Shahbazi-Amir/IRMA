@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from httpx import HTTPError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,7 +28,12 @@ from irma.persistence.models import AssetPrice, BacktestMetric, BacktestRun
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
 from irma.providers.placeholders import PROVIDERS
 from irma.services.backtests import execute_backtest
-from irma.services.data_refresh import RefreshAlreadyRunningError, refresh_from_configured_csv
+from irma.services.data_refresh import (
+    RefreshAlreadyRunningError,
+    refresh_from_configured_csv,
+    refresh_from_fipiran,
+)
+from irma.services.fund_rankings import rank_funds
 from irma.services.recommendations import create_recommendation
 from irma.trading_engine.backtest import BacktestRequest
 
@@ -122,16 +128,7 @@ def funds(
 
 @router.get("/v1/funds/rankings", tags=["funds"])
 def fund_rankings(session: SessionDependency, fund_type: str) -> dict[str, Any]:
-    items = list_funds(session, fund_type=fund_type)
-    return {
-        "fund_type": fund_type,
-        "items": [],
-        "eligible_count": 0,
-        "data_notice": (
-            "Ranking is withheld until enough sourced history, liquidity and quality metrics exist. "
-            f"{len(items)} fund records are currently known."
-        ),
-    }
+    return rank_funds(session, fund_type)
 
 
 @router.get("/v1/funds/{fund_id}", tags=["funds"])
@@ -209,12 +206,23 @@ def backtest_detail(backtest_id: int, session: SessionDependency) -> dict[str, A
 def admin_refresh(session: SessionDependency) -> dict[str, int | str]:
     settings = get_settings()
     try:
+        if settings.fund_provider == "fipiran":
+            return refresh_from_fipiran(
+                session,
+                base_url=settings.fipiran_base_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+                max_retries=settings.provider_max_retries,
+                min_interval_seconds=settings.provider_min_interval_seconds,
+                history_limit=settings.fund_history_limit,
+            )
         return refresh_from_configured_csv(
             session,
             csv_path=settings.fund_csv_path,
             max_retries=settings.provider_max_retries,
         )
     except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
+    except (HTTPError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
     except RefreshAlreadyRunningError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

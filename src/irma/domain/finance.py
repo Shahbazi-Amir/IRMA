@@ -42,7 +42,7 @@ def annualized_return(total_return: float, years: float) -> float:
     _positive(years, "years")
     if total_return < -1:
         raise ValueError("total_return cannot be less than -1")
-    return (1 + total_return) ** (1 / years) - 1
+    return float((1 + total_return) ** (1 / years) - 1)
 
 
 def compound_interest(
@@ -59,7 +59,7 @@ def compound_interest(
     periodic_base = 1 + annual_rate / compounds_per_year
     if periodic_base < 0:
         raise ValueError("annual_rate is too negative for the compounding frequency")
-    return principal * periodic_base ** (compounds_per_year * years)
+    return float(principal * periodic_base ** (compounds_per_year * years))
 
 
 def adjust_for_inflation(nominal_value: float, inflation_rate: float) -> float:
@@ -109,7 +109,7 @@ def sharpe_ratio(
     deviation = statistics.stdev(excess)
     if math.isclose(deviation, 0.0, abs_tol=1e-15):
         raise ValueError("Sharpe ratio is undefined when volatility is zero")
-    return statistics.mean(excess) / deviation * math.sqrt(periods_per_year)
+    return float(statistics.mean(excess) / deviation * math.sqrt(periods_per_year))
 
 
 def sortino_ratio(

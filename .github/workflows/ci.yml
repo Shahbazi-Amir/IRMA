@@ -23,6 +23,8 @@ jobs:
         run: ruff check .
       - name: Ruff format
         run: ruff format --check .
+      - name: MyPy
+        run: mypy
       - name: Tests and coverage
         env:
           IRMA_DATABASE_URL: sqlite:///./ci-test.db

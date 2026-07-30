@@ -162,6 +162,10 @@ def page_recommendation() -> None:
                 "نگهداری": item["suggested_holding"],
                 "روش ورود": item["entry_method"],
                 "دلیل": item["reason"],
+                "ابزارهای واجد شرایط": "، ".join(
+                    suggestion["name_fa"] for suggestion in item.get("instruments", [])
+                )
+                or "به‌دلیل نبود داده کافی، ابزار مشخص پیشنهاد نشد",
             }
         )
     st.dataframe(rows, use_container_width=True, hide_index=True)
@@ -185,6 +189,16 @@ def page_funds() -> None:
                 payload = get_json("/v1/funds", {"fund_type": fund_type, "query": query or None})
                 if payload["items"]:
                     st.dataframe(payload["items"], use_container_width=True, hide_index=True)
+                    ranking = get_json("/v1/funds/rankings", {"fund_type": fund_type})
+                    if ranking["items"]:
+                        st.subheader("رتبه‌بندی داده‌محور")
+                        st.dataframe(ranking["items"], use_container_width=True, hide_index=True)
+                        st.caption(
+                            f"نسخه روش: {ranking['ranking_version']} | "
+                            f"داده واجد شرایط: {ranking['eligible_count']}"
+                        )
+                    else:
+                        st.warning("تاریخچه معتبر و تازه برای رتبه‌بندی کافی نیست.")
                 else:
                     st.warning("داده کافی موجود نیست. داده جعلی نمایش داده نمی‌شود.")
                 st.caption(payload["data_notice"])
@@ -270,7 +284,7 @@ def page_data_status() -> None:
         return
     with st.expander("به‌روزرسانی مدیریتی"):
         admin_key = st.text_input("کلید مدیر", type="password")
-        if st.button("اجرای Refresh CSV"):
+        if st.button("اجرای Refresh داده صندوق‌ها"):
             try:
                 result = post_json(
                     "/v1/admin/data-refresh",
