@@ -56,8 +56,7 @@ from irma.providers.placeholders import PROVIDERS
 from irma.services.backtests import execute_backtest
 from irma.services.data_refresh import (
     RefreshAlreadyRunningError,
-    refresh_from_configured_csv,
-    refresh_from_fipiran,
+    refresh_from_settings,
 )
 from irma.services.fund_backfill import backfill_fund_history
 from irma.services.fund_rankings import rank_funds
@@ -725,31 +724,13 @@ def admin_refresh(
                 except (FileNotFoundError, ValueError) as exc:
                     results[name] = {"status": "failed", "error": str(exc)}
             return {"dataset": "all", "results": results}
-        if settings.fund_provider == "fipiran":
-            return refresh_from_fipiran(
-                session,
-                base_url=settings.fipiran_base_url,
-                timeout_seconds=settings.provider_timeout_seconds,
-                max_retries=settings.provider_max_retries,
-                min_interval_seconds=settings.provider_min_interval_seconds,
-                history_limit=settings.fund_history_limit,
-                catalog_path=settings.fipiran_catalog_path,
-                history_path=settings.fipiran_history_path,
-                user_agent=settings.fipiran_user_agent,
-                failure_threshold=settings.provider_circuit_failures,
-                cooldown_seconds=settings.provider_circuit_cooldown_seconds,
-            )
-        return refresh_from_configured_csv(
-            session,
-            csv_path=settings.fund_csv_path,
-            max_retries=settings.provider_max_retries,
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
-    except (HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
+        return refresh_from_settings(session, settings)
     except RefreshAlreadyRunningError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
+    except (HTTPError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
 
 
 @router.get(

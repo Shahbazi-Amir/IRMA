@@ -5,10 +5,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from irma.config import Settings
 from irma.persistence.models import DataIngestionRun, DataSource, Fund
 from irma.providers.base import DataQuality, FundRecord, ProviderMetadata
 from irma.providers.csv_provider import CsvFundProvider
-from irma.services.data_refresh import RefreshCoordinator
+from irma.services.data_refresh import RefreshCoordinator, refresh_from_settings
 
 
 def test_csv_provider_preserves_missing_values(tmp_path: Path) -> None:
@@ -91,3 +92,93 @@ def test_refresh_records_provider_error(session: Session) -> None:
         RefreshCoordinator(max_retries=0).refresh_funds(session, Broken())
     run = session.scalar(select(DataIngestionRun))
     assert run is not None and run.status == "error"
+
+
+def test_configured_csv_provider_is_selected(session: Session, tmp_path: Path) -> None:
+    path = tmp_path / "funds.csv"
+    path.write_text(
+        "external_id,name_fa,fund_type,source_identifier,observed_at,nav\n"
+        "CSV-1,صندوق واقعی فایل,fixed_income,official:file,"
+        "2026-07-01T12:00:00+00:00,1000\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        fund_provider="csv",
+        fund_csv_path=str(path),
+        fund_history_limit=0,
+        provider_max_retries=0,
+    )
+    result = refresh_from_settings(session, settings)
+    assert result["provider"] == "csv"
+    assert result["records_received"] == 1
+    assert result["records_written"] == 1
+
+
+def test_configured_fipiran_provider_is_selected(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeFipiran(FlakyProvider):
+        def __init__(self, **_: object) -> None:
+            super().__init__()
+            self.calls = 2
+
+        def __enter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr("irma.services.data_refresh.FipiranFundProvider", FakeFipiran)
+    result = refresh_from_settings(
+        session,
+        Settings(fund_provider="fipiran", fund_history_limit=0, provider_max_retries=0),
+    )
+    assert result["provider"] == "fipiran"
+    assert result["records_received"] == 1
+
+
+def test_configured_chain_falls_back_to_official_file(
+    session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenFipiran:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def fetch(self) -> list[FundRecord]:
+            raise OSError("offline")
+
+        def close(self) -> None:
+            pass
+
+    official = tmp_path / "official.csv"
+    official.write_text(
+        "external_id,name_fa,fund_type,source_identifier,observed_at,nav\n"
+        "CHAIN-1,صندوق رسمی جایگزین,gold,official:file,"
+        "2026-07-01T12:00:00+00:00,2000\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("irma.services.data_refresh.FipiranFundProvider", BrokenFipiran)
+    result = refresh_from_settings(
+        session,
+        Settings(
+            fund_provider="chain",
+            official_fund_file_path=str(official),
+            fund_history_limit=0,
+            provider_max_retries=0,
+        ),
+    )
+    assert result["selected_source"] == "official-file"
+    assert result["fallback_errors"] == ["fipiran: OSError"]
+    assert result["records_written"] == 1
+
+
+def test_configured_refresh_reports_provider_failure(session: Session, tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="csv refresh failed"):
+        refresh_from_settings(
+            session,
+            Settings(
+                fund_provider="csv",
+                fund_csv_path=str(tmp_path / "missing.csv"),
+                provider_max_retries=0,
+            ),
+        )

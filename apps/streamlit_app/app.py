@@ -68,7 +68,10 @@ def page_home() -> None:
         st.metric("نسخه", info["version"])
         st.caption(f"آخرین بررسی وضعیت داده: {status['checked_at']}")
         if not status["database_sources"]:
-            st.warning("داده کافی موجود نیست؛ برای داده واقعی از ورود CSV معتبر استفاده کنید.")
+            st.warning(
+                "داده‌ای وارد نشده است. برای آماده‌سازی داده واقعی اجرا کنید: "
+                "`IRMA_FUND_PROVIDER=fipiran python scripts/bootstrap_data.py`"
+            )
     except Exception as exc:
         api_error(exc)
 
@@ -255,7 +258,11 @@ def page_funds() -> None:
                     else:
                         st.warning("تاریخچه معتبر و تازه برای رتبه‌بندی کافی نیست.")
                 else:
-                    st.warning("داده کافی موجود نیست. داده جعلی نمایش داده نمی‌شود.")
+                    st.warning(
+                        "داده کافی موجود نیست و داده جعلی نمایش داده نمی‌شود. "
+                        "فرمان آماده‌سازی: "
+                        "`IRMA_FUND_PROVIDER=fipiran python scripts/bootstrap_data.py`"
+                    )
                 st.caption(payload["data_notice"])
             except Exception as exc:
                 api_error(exc)
@@ -340,7 +347,10 @@ def page_data_status() -> None:
         if payload["database_sources"]:
             st.dataframe(payload["database_sources"], use_container_width=True, hide_index=True)
         else:
-            st.warning("هنوز داده معتبر وارد نشده است.")
+            st.warning(
+                "هنوز داده معتبر وارد نشده است. اجرا کنید: "
+                "`IRMA_FUND_PROVIDER=fipiran python scripts/bootstrap_data.py`"
+            )
         st.subheader("Adapterهای در انتظار اتصال")
         st.dataframe(payload["unavailable_adapters"], use_container_width=True, hide_index=True)
     except Exception as exc:

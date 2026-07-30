@@ -19,6 +19,18 @@ IRMA_FUND_PROVIDER=fipiran
 IRMA_FUND_HISTORY_LIMIT=25
 ```
 
+فرمان آماده‌سازی اولیه:
+
+```bash
+IRMA_FUND_PROVIDER=fipiran python scripts/bootstrap_data.py
+```
+
+Providerهای صندوق `csv`، `fipiran` و `chain` هستند. در `chain` فقط CSV رسمی
+منبع‌دار می‌تواند جایگزین شود و این وضعیت در گزارش و DataSource با منبع فایل
+ثبت می‌شود. `IRMA_FUND_HISTORY_LIMIT=0` تاریخچه را غیرفعال می‌کند؛ برای همه
+صندوق‌های فعال `IRMA_FUND_HISTORY_ALL=true` قرار دهید. شکست تاریخچه یک صندوق
+گزارش می‌شود و داده صندوق‌های موفق حفظ می‌گردد.
+
 تعداد تاریخچه‌های دریافت‌شده در هر اجرا محدود است. timeout، retry و فاصله حداقلی
 درخواست قابل تنظیم‌اند. پاسخ در مرز Provider با Pydantic اعتبارسنجی و هش می‌شود.
 شناسه تکراری، NAV نامعتبر و تغییر ناسازگار schema باعث شکست شفاف refresh می‌شود.
