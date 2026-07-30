@@ -1,60 +1,21 @@
-# IRMA Roadmap
+# نقشه راه
 
-## Phase 0 — Initial MVP
+## تکمیل‌شده در نسخه قابل‌دیپلوی
 
-- [x] Python project foundation
-- [x] FastAPI backend and settings
-- [x] Core financial calculations
-- [x] Investor profile model
-- [x] Explainable rule-based allocation
-- [x] Unit and smoke tests
-- [x] Ruff, Pytest, GitHub Actions
-- [x] Docker and Docker Compose
+- FastAPI، Streamlit فارسی، PostgreSQL/SQLite و Alembic
+- پروفایل کامل و Rule Engine نسخه‌بندی‌شده
+- سود مرکب، تحلیل صندوق و بک‌تست پژوهشی
+- Provider CSV، منشأ، کیفیت، Stale status و Refresh
+- Docker Compose و CI توسعه‌یافته
 
-## Phase 1 — Curated Iranian data
+## گام بعد
 
-- Define authoritative sources and licensing constraints.
-- Implement provider adapters behind the market-data interface.
-- Add provenance, timestamps, validation, and stale-data handling.
-- Start with a small, reviewed dataset for funds, gold, deposits, FX, and market indices.
-- Never substitute missing observations with fabricated values.
+1. بررسی حقوقی و فنی منابع رسمی و افزودن Adapterهای پایدار
+2. تاریخچه واقعی صندوق‌ها و محاسبه رتبه‌بندی درون هر نوع
+3. اتصال تورم رسمی و نرخ‌های بانکی با تاریخ اعتبار
+4. ارزیابی کیفیت بک‌تست روی مجموعه داده بدون Survivorship Bias
+5. احراز هویت مدیر و مدیریت امن‌تر Secretها
 
-## Phase 2 — Product and portfolio analysis
+## خارج از محدوده فعلی
 
-- Fund comparison using fees, liquidity, risk, drawdown, and historical returns.
-- Scenario analysis for low capital, monthly contributions, and inflation.
-- User-visible assumptions and data-quality indicators.
-- Versioned rule sets and recommendation audit logs.
-
-## Phase 3 — Broader asset coverage
-
-- Real-estate analysis for explicitly supported cities and data sources.
-- Banking-product comparison using verified terms.
-- Currency and gold analytics.
-- Paper-trading and backtesting only, with clear limitations.
-
-## Phase 4 — Retrieval and research assistant
-
-- Document ingestion with source attribution.
-- RAG evaluation datasets and grounded-answer checks.
-- Iranian financial terminology normalization.
-- Citation-first research responses.
-
-## Deferred until separate approval
-
-- Live trading or order submission
-- Bank connectivity
-- Financial identity verification
-- Price prediction
-- Live short-term trading signals
-- Complex portfolio optimization
-- Nationwide real-estate coverage
-
-## Engineering priorities
-
-1. Data provenance and correctness
-2. Security and privacy
-3. Explainability
-4. Test coverage
-5. Reproducible deployments
-6. Observability and auditability
+معامله واقعی، اتصال کارگزاری و بانک، پیش‌بینی قطعی، سیگنال قطعی، تحلیل کامل املاک همه شهرها و بهینه‌سازی پیچیده سبد.

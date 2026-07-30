@@ -21,10 +21,17 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
+    database_url: str = "sqlite:///./irma.db"
+    cors_origins: str = "http://localhost:8501"
+    admin_key: str | None = None
+    api_base_url: str = "http://localhost:8000"
+    fund_csv_path: str = "data/imports/funds.csv"
+    refresh_enabled: bool = False
+    refresh_interval_minutes: int = Field(default=1440, ge=15)
+    provider_timeout_seconds: int = Field(default=15, ge=1, le=120)
+    provider_max_retries: int = Field(default=2, ge=0, le=10)
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return cached application settings."""
-
     return Settings()

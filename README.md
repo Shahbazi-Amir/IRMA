@@ -1,30 +1,39 @@
-# IRMA
+# IRMA — Iranian Risk & Market Advisor
 
-**IRMA** is an early-stage, Iran-focused investment research and allocation assistant. This repository currently contains the initial backend MVP: deterministic financial calculations, an investor profile model, and a transparent rule-based allocation engine.
+**سامانه هوشمند تحلیل بازار، ریسک و سرمایه‌گذاری ایران** یک برنامه پژوهشی فارسی برای ساخت پروفایل سرمایه‌گذار، محاسبات مالی، پیشنهاد سبد مبتنی بر قواعد، مقایسه داده‌محور صندوق‌ها و بک‌تست پژوهشی است.
 
-> IRMA does not provide personalized financial advice, execute trades, predict prices, or invent market returns. The current allocation output is an experimental rule-based suggestion for research and software validation.
+> IRMA تضمین سود نمی‌دهد، جایگزین مشاوره مالی دارای مجوز نیست، سفارش واقعی ارسال نمی‌کند و داده مفقود را صفر یا داده جعلی تلقی نمی‌کند.
 
-## MVP capabilities
+## قابلیت‌های نسخه ۱
 
-- Rial/Toman conversion
-- Simple, cumulative, annualized, inflation-adjusted, and real return calculations
-- Compound interest, volatility, maximum drawdown, and Sharpe ratio calculations
-- Investor profile validation, starting from 1,000,000 Toman
-- Explainable allocation suggestions across:
-  - cash
-  - deposits/fixed income
-  - gold
-  - equity funds
-  - high-risk/trading allocation
-- FastAPI health and recommendation endpoints
-- Unit tests, Ruff configuration, GitHub Actions, Docker, and Docker Compose
+- رابط فارسی و راست‌چین Streamlit برای موبایل و دسکتاپ
+- FastAPI و OpenAPI
+- پروفایل سرمایه‌گذار از حداقل ۱٬۰۰۰٬۰۰۰ تومان
+- تخصیص درصدی و ریالی قابل‌توضیح با Ruleset نسخه‌بندی‌شده
+- تبدیل ریال/تومان، بازده، CAGR، تورم، بازده واقعی، نوسان، افت، Sharpe و Sortino
+- ماشین‌حساب سود مرکب با واریز ماهانه و ارزش واقعی
+- مدل داده PostgreSQL با جایگزین SQLite و Migrationهای Alembic
+- Provider دستی CSV با ثبت منبع، زمان مشاهده، کیفیت و هش فایل
+- API صندوق‌ها، وضعیت داده‌ها، بازار، Refresh مدیریتی و بک‌تست
+- بک‌تست long-only پژوهشی با هزینه، Slippage، فیلتر نقدشوندگی و اجرای دوره بعد
+- Docker Compose برای API، Web و PostgreSQL
 
-## Requirements
+## اجرای Docker
 
-- Python 3.11+
-- Docker (optional)
+```bash
+cp .env.example .env
+docker compose up --build
+```
 
-## Local setup
+نشانی‌ها:
+
+- Web: `http://localhost:8501`
+- API: `http://localhost:8000`
+- API Docs: `http://localhost:8000/docs`
+
+PostgreSQL فقط داخل شبکه Docker در دسترس است.
+
+## نصب محلی
 
 ```bash
 python -m venv .venv
@@ -32,61 +41,99 @@ source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
 cp .env.example .env
-```
-
-Run the API:
-
-```bash
+# برای توسعه ساده:
+export IRMA_DATABASE_URL=sqlite:///./irma.db
+alembic upgrade head
 uvicorn irma.main:app --reload
 ```
 
-OpenAPI documentation is available at `http://127.0.0.1:8000/docs`.
-
-## Example request
+رابط وب:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/v1/recommendations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "capital_toman": 1000000,
-    "monthly_contribution_toman": 0,
-    "horizon_months": 24,
-    "risk_tolerance": "moderate",
-    "max_drawdown_tolerance": 0.2,
-    "needs_monthly_income": false,
-    "liquidity_need": "medium",
-    "wants_trading": false,
-    "experience": "beginner"
-  }'
+IRMA_API_BASE_URL=http://localhost:8000 streamlit run apps/streamlit_app/app.py
 ```
 
-## Quality checks
+## ورود داده صندوق‌ها
+
+IRMA هیچ رکورد نمونه را به‌عنوان داده واقعی ثبت نمی‌کند. فایل CSV معتبر را در `data/imports/funds.csv` قرار دهید. ستون‌های الزامی:
+
+```text
+name_fa,fund_type,source_identifier,observed_at
+```
+
+ستون‌های اختیاری:
+
+```text
+symbol,is_etf,inception_date,nav,market_price,volume,manager,market_maker,data_version
+```
+
+سپس با کلید مدیریتی تنظیم‌شده، Endpoint زیر را اجرا کنید:
+
+```text
+POST /v1/admin/data-refresh
+Header: X-IRMA-Admin-Key
+```
+
+یا:
+
+```bash
+python scripts/refresh_data.py
+```
+
+## Migration
+
+```bash
+alembic upgrade head
+alembic downgrade -1
+```
+
+## تست و کیفیت
 
 ```bash
 ruff check .
 ruff format --check .
 pytest
 python -m compileall src tests
+python scripts/check_repo_safety.py
 ```
 
-## Docker
+## سرویس‌ها و پورت‌ها
 
-```bash
-docker compose up --build
-```
+| سرویس | پورت | توضیح |
+|---|---:|---|
+| Streamlit | 8501 | رابط فارسی |
+| FastAPI | 8000 | API و OpenAPI |
+| PostgreSQL | داخلی | در Host منتشر نمی‌شود |
 
-The API will be available at `http://localhost:8000`.
+## متغیرهای محیطی مهم
 
-## Project documents
+- `IRMA_DATABASE_URL`: اتصال SQLAlchemy
+- `IRMA_CORS_ORIGINS`: Originهای مجاز با کاما
+- `IRMA_ADMIN_KEY`: محافظ Refresh مدیریتی؛ بدون مقدار Endpoint غیرفعال است
+- `IRMA_FUND_CSV_PATH`: مسیر CSV صندوق‌ها
+- `IRMA_REFRESH_ENABLED`: فعال‌سازی Worker زمان‌بندی‌شده
+- `IRMA_REFRESH_INTERVAL_MINUTES`: فاصله Refresh
+- `IRMA_API_BASE_URL`: نشانی API برای Streamlit
 
-- [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
-- [Future interfaces](docs/interfaces.md)
+## صفحات رابط
 
-## Security and data handling
+خانه، پروفایل سرمایه‌گذار، پیشنهاد سبد، مقایسه صندوق‌ها، سود مرکب، تحلیل کوتاه‌مدت، تحلیل بلندمدت، وضعیت داده‌ها و درباره/روش‌شناسی.
 
-Do not commit `.env`, credentials, private financial data, local databases, raw large datasets, or model files. Environment variables must be documented in `.env.example`.
+## مستندات
 
-## Current limitations
+- [معماری](docs/architecture.md)
+- [منابع داده](docs/data-sources.md)
+- [مدل پایگاه داده](docs/database-schema.md)
+- [روش محاسبات مالی](docs/financial-methodology.md)
+- [روش پیشنهاددهی](docs/recommendation-methodology.md)
+- [رتبه‌بندی صندوق‌ها](docs/fund-ranking-methodology.md)
+- [بک‌تست](docs/backtesting-methodology.md)
+- [دیپلوی](docs/deployment.md)
+- [امنیت](docs/security.md)
+- [محدودیت‌ها](docs/limitations.md)
+- [راهنمای فارسی](docs/user-guide-fa.md)
+- [نقشه راه](docs/roadmap.md)
 
-The MVP does not fetch live Iranian market data, estimate future returns, perform optimization, analyze all real-estate markets, connect to banks, authenticate financial users, or submit orders. See the roadmap for planned phases.
+## محدودیت‌های فعلی
+
+اتصال خودکار پایدار به منابع رسمی ایران در این نسخه فعال نیست. تا زمان بررسی حقوقی، فنی و پایداری Endpointها، داده صندوق‌ها از CSV دارای منشأ وارد می‌شود. رتبه‌بندی صندوق بدون تاریخچه کافی نمایش داده نمی‌شود. املاک و ارز Interface و قالب ورود آینده دارند، اما تحلیل کامل آن‌ها انجام نشده است.

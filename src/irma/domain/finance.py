@@ -1,10 +1,11 @@
-"""Pure financial calculation functions used by IRMA."""
+"""Pure financial calculations used across IRMA."""
 
 from __future__ import annotations
 
 import math
 import statistics
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 
 RIALS_PER_TOMAN = Decimal(10)
@@ -16,27 +17,19 @@ def _positive(value: float, name: str) -> None:
 
 
 def rial_to_toman(amount_rial: Decimal | int | str) -> Decimal:
-    """Convert Iranian rial to toman without rounding."""
-
     return Decimal(amount_rial) / RIALS_PER_TOMAN
 
 
 def toman_to_rial(amount_toman: Decimal | int | str) -> Decimal:
-    """Convert Iranian toman to rial without rounding."""
-
     return Decimal(amount_toman) * RIALS_PER_TOMAN
 
 
 def simple_return(initial_value: float, final_value: float) -> float:
-    """Calculate simple return as a decimal ratio."""
-
     _positive(initial_value, "initial_value")
     return final_value / initial_value - 1
 
 
 def cumulative_return(period_returns: Iterable[float]) -> float:
-    """Compound period returns into one cumulative return."""
-
     growth = 1.0
     for period_return in period_returns:
         if period_return < -1:
@@ -46,8 +39,6 @@ def cumulative_return(period_returns: Iterable[float]) -> float:
 
 
 def annualized_return(total_return: float, years: float) -> float:
-    """Calculate compound annual growth from a total return and duration."""
-
     _positive(years, "years")
     if total_return < -1:
         raise ValueError("total_return cannot be less than -1")
@@ -60,8 +51,6 @@ def compound_interest(
     years: float,
     compounds_per_year: int = 1,
 ) -> float:
-    """Calculate a future value using periodic compounding."""
-
     if principal < 0:
         raise ValueError("principal cannot be negative")
     _positive(years, "years")
@@ -74,24 +63,18 @@ def compound_interest(
 
 
 def adjust_for_inflation(nominal_value: float, inflation_rate: float) -> float:
-    """Express a nominal value in current purchasing-power terms."""
-
     if inflation_rate <= -1:
         raise ValueError("inflation_rate must be greater than -1")
     return nominal_value / (1 + inflation_rate)
 
 
 def real_return(nominal_return: float, inflation_rate: float) -> float:
-    """Calculate the inflation-adjusted return using the Fisher relation."""
-
     if inflation_rate <= -1:
         raise ValueError("inflation_rate must be greater than -1")
     return (1 + nominal_return) / (1 + inflation_rate) - 1
 
 
 def volatility(period_returns: Sequence[float], *, sample: bool = True) -> float:
-    """Calculate period-return standard deviation."""
-
     minimum = 2 if sample else 1
     if len(period_returns) < minimum:
         raise ValueError(f"at least {minimum} return values are required")
@@ -99,19 +82,15 @@ def volatility(period_returns: Sequence[float], *, sample: bool = True) -> float
 
 
 def maximum_drawdown(portfolio_values: Sequence[float]) -> float:
-    """Return the largest peak-to-trough decline as a positive ratio."""
-
     if not portfolio_values:
         raise ValueError("portfolio_values cannot be empty")
     if any(value <= 0 for value in portfolio_values):
         raise ValueError("portfolio values must be greater than zero")
-
     peak = portfolio_values[0]
     maximum = 0.0
     for value in portfolio_values:
         peak = max(peak, value)
-        drawdown = (peak - value) / peak
-        maximum = max(maximum, drawdown)
+        maximum = max(maximum, (peak - value) / peak)
     return maximum
 
 
@@ -121,16 +100,106 @@ def sharpe_ratio(
     risk_free_rate: float = 0.0,
     periods_per_year: int = 12,
 ) -> float:
-    """Calculate an annualized Sharpe ratio from periodic returns."""
-
     if len(period_returns) < 2:
         raise ValueError("at least two return values are required")
     if periods_per_year <= 0:
         raise ValueError("periods_per_year must be greater than zero")
-
     risk_free_per_period = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
-    excess_returns = [value - risk_free_per_period for value in period_returns]
-    deviation = statistics.stdev(excess_returns)
+    excess = [item - risk_free_per_period for item in period_returns]
+    deviation = statistics.stdev(excess)
     if math.isclose(deviation, 0.0, abs_tol=1e-15):
         raise ValueError("Sharpe ratio is undefined when volatility is zero")
-    return statistics.mean(excess_returns) / deviation * math.sqrt(periods_per_year)
+    return statistics.mean(excess) / deviation * math.sqrt(periods_per_year)
+
+
+def sortino_ratio(
+    period_returns: Sequence[float],
+    *,
+    target_return: float = 0.0,
+    periods_per_year: int = 12,
+) -> float:
+    if len(period_returns) < 2:
+        raise ValueError("at least two return values are required")
+    downside = [min(0.0, item - target_return) ** 2 for item in period_returns]
+    downside_deviation = math.sqrt(sum(downside) / len(downside))
+    if math.isclose(downside_deviation, 0.0, abs_tol=1e-15):
+        raise ValueError("Sortino ratio is undefined without downside volatility")
+    return (
+        (statistics.mean(period_returns) - target_return)
+        / downside_deviation
+        * math.sqrt(periods_per_year)
+    )
+
+
+def recovery_period(portfolio_values: Sequence[float]) -> int | None:
+    if len(portfolio_values) < 2:
+        return 0
+    peak_index = 0
+    peak_value = portfolio_values[0]
+    worst_peak_index = 0
+    worst_index = 0
+    worst_drawdown = 0.0
+    for index, value in enumerate(portfolio_values):
+        if value > peak_value:
+            peak_value = value
+            peak_index = index
+        drawdown = (peak_value - value) / peak_value
+        if drawdown > worst_drawdown:
+            worst_drawdown = drawdown
+            worst_peak_index = peak_index
+            worst_index = index
+    if worst_drawdown == 0:
+        return 0
+    target = portfolio_values[worst_peak_index]
+    for index in range(worst_index + 1, len(portfolio_values)):
+        if portfolio_values[index] >= target:
+            return index - worst_peak_index
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class CompoundResult:
+    final_nominal: float
+    final_real: float
+    total_contributions: float
+    nominal_profit: float
+    timeline: list[dict[str, float | int]]
+
+
+def compound_with_contributions(
+    *,
+    principal: float,
+    monthly_contribution: float,
+    annual_rate: float,
+    months: int,
+    compounding: str = "monthly",
+    annual_inflation: float = 0.0,
+) -> CompoundResult:
+    if principal < 0 or monthly_contribution < 0:
+        raise ValueError("principal and monthly contribution cannot be negative")
+    if months <= 0:
+        raise ValueError("months must be greater than zero")
+    if annual_inflation <= -1:
+        raise ValueError("annual inflation must be greater than -1")
+    if compounding not in {"monthly", "annual"}:
+        raise ValueError("compounding must be monthly or annual")
+    balance = principal
+    timeline: list[dict[str, float | int]] = [{"month": 0, "nominal": balance, "real": balance}]
+    monthly_rate = (1 + annual_rate) ** (1 / 12) - 1
+    for month in range(1, months + 1):
+        balance += monthly_contribution
+        if compounding == "monthly":
+            balance *= 1 + monthly_rate
+        elif month % 12 == 0:
+            balance *= 1 + annual_rate
+        inflation_factor = (1 + annual_inflation) ** (month / 12)
+        timeline.append({"month": month, "nominal": balance, "real": balance / inflation_factor})
+    contributions = principal + monthly_contribution * months
+    final_real = float(timeline[-1]["real"])
+    return CompoundResult(
+        final_nominal=balance,
+        final_real=final_real,
+        total_contributions=contributions,
+        nominal_profit=balance - contributions,
+        timeline=timeline,
+    )

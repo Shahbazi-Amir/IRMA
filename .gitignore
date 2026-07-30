@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -9,23 +8,19 @@ dist/
 .mypy_cache/
 .coverage
 htmlcov/
-
-# Environments and secrets
 .venv/
 venv/
 .env
 .env.*
 !.env.example
-
-# Editors and OS
 .idea/
 .vscode/
 .DS_Store
-
-# Local data and models
 *.db
 *.sqlite
 *.sqlite3
 data/raw/
+data/imports/*.csv
+!data/imports/.gitkeep
 models/
 artifacts/
