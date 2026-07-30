@@ -29,6 +29,7 @@ from irma.persistence.models import (
     AssetPrice,
     BacktestMetric,
     BacktestRun,
+    BackfillRun,
     BankProduct,
     BankProductVersion,
     DataIngestionRun,
@@ -36,6 +37,8 @@ from irma.persistence.models import (
     DataSource,
     Fund,
     FundInstrumentMapping,
+    FundFieldProvenance,
+    FundDataConflict,
     FundMarketHistory,
     FundNavHistory,
     InflationObservation,
@@ -45,9 +48,11 @@ from irma.persistence.models import (
     MarketIndexHistory,
     MarketInstrument,
     RecommendationRun,
+    ProviderHealthEvent,
 )
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
 from irma.providers.placeholders import PROVIDERS
+from irma.providers.fipiran import FipiranFundProvider
 from irma.services.backtests import execute_backtest
 from irma.services.data_refresh import (
     RefreshAlreadyRunningError,
@@ -55,6 +60,7 @@ from irma.services.data_refresh import (
     refresh_from_fipiran,
 )
 from irma.services.fund_rankings import rank_funds
+from irma.services.fund_backfill import backfill_fund_history
 from irma.services.multi_asset_refresh import (
     refresh_bank_products,
     refresh_inflation,
@@ -204,6 +210,111 @@ def funds(
 @router.get("/v1/funds/rankings", tags=["funds"])
 def fund_rankings(session: SessionDependency, fund_type: str) -> dict[str, Any]:
     return rank_funds(session, fund_type)
+
+
+@router.get("/v1/providers/funds/status", tags=["funds"])
+def fund_provider_status(session: SessionDependency) -> dict[str, Any]:
+    settings = get_settings()
+    source = session.scalar(select(DataSource).where(DataSource.name == "fipiran"))
+    latest = session.scalar(
+        select(ProviderHealthEvent)
+        .where(ProviderHealthEvent.provider == "fipiran")
+        .order_by(ProviderHealthEvent.observed_at.desc())
+        .limit(1)
+    )
+    return {
+        "configured_provider": settings.fund_provider,
+        "contract": settings.fipiran_contract,
+        "fallback_file_configured": settings.official_fund_file_path,
+        "status": source.status if source else "unavailable",
+        "last_success_at": source.last_valid_observation_at if source else None,
+        "last_failure_at": latest.observed_at if latest else None,
+        "last_failure_reason": latest.event_type if latest else None,
+    }
+
+
+@router.get("/v1/providers/funds/diagnostics", tags=["funds"])
+def fund_provider_diagnostics(session: SessionDependency) -> dict[str, Any]:
+    events = session.scalars(
+        select(ProviderHealthEvent).order_by(ProviderHealthEvent.observed_at.desc()).limit(50)
+    ).all()
+    return {
+        "items": [
+            {
+                "provider": event.provider,
+                "event_type": event.event_type,
+                "severity": event.severity,
+                "status_code": event.status_code,
+                "response_hash": event.response_hash,
+                "sample": event.sanitized_sample,
+                "observed_at": event.observed_at,
+            }
+            for event in events
+        ],
+        "notice": "Cookies, authorization headers, tokens and raw payloads are not stored.",
+    }
+
+
+@router.get("/v1/funds/{fund_id}/eligibility", tags=["funds"])
+def fund_eligibility(fund_id: int, session: SessionDependency) -> dict[str, Any]:
+    fund = session.get(Fund, fund_id)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="fund not found")
+    ranking = rank_funds(session, fund.fund_type)
+    item = next((row for row in ranking["items"] if row["fund_id"] == fund_id), None)
+    reason = None
+    if item is None:
+        for key, count in ranking["exclusions"].items():
+            if count:
+                reason = key
+                break
+    return {
+        "fund_id": fund_id,
+        "eligible": item is not None,
+        "reason": "eligible" if item is not None else reason or "not_eligible",
+        "ruleset_version": ranking["ranking_version"],
+        "minimum_observations": 90,
+        "maximum_staleness_days": 7,
+        "ranking": item,
+    }
+
+
+@router.get("/v1/funds/{fund_id}/provenance", tags=["funds"])
+def fund_provenance(fund_id: int, session: SessionDependency) -> dict[str, Any]:
+    fund = session.get(Fund, fund_id)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="fund not found")
+    fields = session.scalars(
+        select(FundFieldProvenance).where(FundFieldProvenance.fund_id == fund_id)
+    ).all()
+    conflicts = session.scalars(
+        select(FundDataConflict).where(FundDataConflict.fund_id == fund_id)
+    ).all()
+    return {
+        "fund_id": fund_id,
+        "source_id": fund.source_id,
+        "last_data_at": fund.last_data_at,
+        "fields": [
+            {
+                "field": item.field_name,
+                "source_id": item.source_id,
+                "value_hash": item.value_hash,
+                "observed_at": item.observed_at,
+            }
+            for item in fields
+        ],
+        "conflicts": [
+            {
+                "field": item.field_name,
+                "difference_percent": float(item.difference_percent)
+                if item.difference_percent is not None
+                else None,
+                "severity": item.severity,
+                "observed_at": item.observed_at,
+            }
+            for item in conflicts
+        ],
+    }
 
 
 @router.get("/v1/funds/{fund_id}", tags=["funds"])
@@ -622,6 +733,11 @@ def admin_refresh(
                 max_retries=settings.provider_max_retries,
                 min_interval_seconds=settings.provider_min_interval_seconds,
                 history_limit=settings.fund_history_limit,
+                catalog_path=settings.fipiran_catalog_path,
+                history_path=settings.fipiran_history_path,
+                user_agent=settings.fipiran_user_agent,
+                failure_threshold=settings.provider_circuit_failures,
+                cooldown_seconds=settings.provider_circuit_cooldown_seconds,
             )
         return refresh_from_configured_csv(
             session,
@@ -634,3 +750,52 @@ def admin_refresh(
         raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail=str(exc)) from exc
     except RefreshAlreadyRunningError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get("/v1/admin/funds/backfill/{run_id}", dependencies=[Depends(require_admin_key)], tags=["admin"])
+def backfill_status(run_id: str, session: SessionDependency) -> dict[str, Any]:
+    run = session.scalar(select(BackfillRun).where(BackfillRun.run_id == run_id))
+    if run is None:
+        raise HTTPException(status_code=404, detail="backfill run not found")
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "funds_completed": run.funds_completed,
+        "rows_written": run.rows_written,
+        "errors": run.errors_json,
+        "started_at": run.started_at,
+        "finished_at": run.finished_at,
+    }
+
+
+@router.post(
+    "/v1/admin/funds/backfill",
+    dependencies=[Depends(require_admin_key)],
+    tags=["admin"],
+)
+def start_fund_backfill(
+    session: SessionDependency,
+    limit: int = Query(default=10, ge=1, le=25),
+    fund_type: str | None = Query(default=None),
+) -> dict[str, object]:
+    settings = get_settings()
+    running = session.scalar(select(BackfillRun.id).where(BackfillRun.status == "running"))
+    if running is not None:
+        raise HTTPException(status_code=409, detail="a backfill is already running")
+    with FipiranFundProvider(
+        base_url=settings.fipiran_base_url,
+        timeout_seconds=settings.provider_timeout_seconds,
+        min_interval_seconds=settings.provider_min_interval_seconds,
+        catalog_path=settings.fipiran_catalog_path,
+        history_path=settings.fipiran_history_path,
+        user_agent=settings.fipiran_user_agent,
+        failure_threshold=settings.provider_circuit_failures,
+        cooldown_seconds=settings.provider_circuit_cooldown_seconds,
+        retries=settings.provider_max_retries,
+    ) as provider:
+        return backfill_fund_history(
+            session,
+            provider,
+            limit=limit,
+            fund_type=fund_type,
+        )

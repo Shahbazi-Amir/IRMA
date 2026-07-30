@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from irma.persistence.models import DataSource, Fund, FundMetric, FundNavHistory
@@ -29,6 +29,26 @@ def list_funds(
             .order_by(FundNavHistory.valid_at.desc())
             .limit(1)
         )
+        source = session.get(DataSource, fund.source_id) if fund.source_id else None
+        observation_count = (
+            session.scalar(
+                select(func.count(FundNavHistory.id)).where(FundNavHistory.fund_id == fund.id)
+            )
+            or 0
+        )
+        now = datetime.now(UTC)
+        last_data_at = fund.last_data_at
+        if last_data_at is not None:
+            last_data_at = last_data_at.replace(tzinfo=last_data_at.tzinfo or UTC)
+        freshness = (
+            "unavailable"
+            if last_data_at is None
+            else "stale"
+            if now - last_data_at > timedelta(days=7)
+            else "live"
+            if source and source.source_type == "api"
+            else "official_file"
+        )
         results.append(
             {
                 "id": fund.id,
@@ -51,6 +71,9 @@ def list_funds(
                 "quality_status": fund.quality_status,
                 "last_data_at": fund.last_data_at,
                 "source_id": fund.source_id,
+                "source": source.name if source else None,
+                "source_status": freshness,
+                "observation_count": observation_count,
             }
         )
     return results

@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -351,3 +352,63 @@ class PortfolioRebalancePlan(Base):
     method: Mapped[str] = mapped_column(String(40))
     threshold_points: Mapped[Decimal] = mapped_column(Numeric(8, 4))
     plan_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ProviderHealthEvent(Base):
+    __tablename__ = "provider_health_events"
+    __table_args__ = (Index("ix_provider_health_provider_observed", "provider", "observed_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(80), index=True)
+    event_type: Mapped[str] = mapped_column(String(60), index=True)
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sanitized_sample: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class FundFieldProvenance(Base):
+    __tablename__ = "fund_field_provenance"
+    __table_args__ = (UniqueConstraint("fund_id", "field_name", "observed_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("funds.id"), index=True)
+    field_name: Mapped[str] = mapped_column(String(80), index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), index=True)
+    value_hash: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class FundDataConflict(Base):
+    __tablename__ = "fund_data_conflicts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("funds.id"), index=True)
+    field_name: Mapped[str] = mapped_column(String(80), index=True)
+    primary_source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"))
+    secondary_source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"))
+    difference_percent: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class BackfillRun(Base):
+    __tablename__ = "backfill_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), index=True, default="running")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    funds_completed: Mapped[int] = mapped_column(Integer, default=0)
+    rows_written: Mapped[int] = mapped_column(Integer, default=0)
+    errors_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+
+class BackfillCheckpoint(Base):
+    __tablename__ = "backfill_checkpoints"
+    __table_args__ = (UniqueConstraint("run_id", "fund_external_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    fund_external_id: Mapped[str] = mapped_column(String(80), index=True)
+    last_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

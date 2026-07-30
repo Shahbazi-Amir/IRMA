@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   validate:
@@ -49,3 +50,45 @@ jobs:
         with:
           name: live-data-validation
           path: artifacts/
+      - name: Add workflow summary
+        if: always()
+        run: cat artifacts/live-data-validation-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Deduplicate provider degradation issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const report = JSON.parse(fs.readFileSync("artifacts/live-data-validation.json", "utf8"));
+            const title = "Live fund data provider degraded";
+            const {data} = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", labels: "live-data"
+            });
+            const issue = data.find(item => item.title === title);
+            if (report.status !== "success") {
+              const body = [
+                "Automated live validation could not retrieve a validated fund dataset.",
+                `Status: \`${report.status}\``,
+                `Contract: \`${report.contract_selected}\``,
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                "No fixture was substituted."
+              ].join("\n\n");
+              if (issue) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number, body
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ["live-data"]
+                });
+              }
+            } else if (issue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+                body: "Live validation recovered; closing this deduplicated alert."
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: "closed"
+              });
+            }

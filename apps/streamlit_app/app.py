@@ -231,6 +231,18 @@ def page_funds() -> None:
             try:
                 payload = get_json("/v1/funds", {"fund_type": fund_type, "query": query or None})
                 if payload["items"]:
+                    labels = {
+                        "live": "🟢 زنده",
+                        "official_file": "🔵 فایل رسمی",
+                        "fallback_live": "🟡 منبع جایگزین",
+                        "last_known_good": "🟠 آخرین داده معتبر",
+                        "stale": "🟠 قدیمی",
+                        "unavailable": "⚪ ناموجود",
+                    }
+                    for item in payload["items"]:
+                        item["وضعیت منبع"] = labels.get(
+                            item.get("source_status"), item.get("source_status")
+                        )
                     st.dataframe(payload["items"], use_container_width=True, hide_index=True)
                     ranking = get_json("/v1/funds/rankings", {"fund_type": fund_type})
                     if ranking["items"]:
