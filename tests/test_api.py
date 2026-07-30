@@ -1,6 +1,14 @@
 from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from irma.persistence.models import (
+    DataSource,
+    Fund,
+    FundDataConflict,
+    FundFieldProvenance,
+)
 
 
 def recommendation_payload() -> dict[str, object]:
@@ -85,6 +93,50 @@ def test_fund_provider_status_and_sanitized_diagnostics(client: TestClient) -> N
 def test_missing_fund_eligibility_and_provenance_are_404(client: TestClient) -> None:
     assert client.get("/v1/funds/999/eligibility").status_code == 404
     assert client.get("/v1/funds/999/provenance").status_code == 404
+
+
+def test_fund_eligibility_reason_and_provenance(client: TestClient, session: Session) -> None:
+    source = DataSource(
+        name="official-file",
+        source_identifier="official:file",
+        source_type="official_file",
+    )
+    session.add(source)
+    session.flush()
+    fund = Fund(
+        external_id="REG-1",
+        name_fa="صندوق رسمی",
+        fund_type="fixed_income",
+        source_id=source.id,
+        quality_status="valid",
+    )
+    session.add(fund)
+    session.flush()
+    session.add(
+        FundFieldProvenance(
+            fund_id=fund.id,
+            field_name="nav",
+            source_id=source.id,
+            value_hash="a" * 64,
+        )
+    )
+    session.add(
+        FundDataConflict(
+            fund_id=fund.id,
+            field_name="nav",
+            primary_source_id=source.id,
+            secondary_source_id=source.id,
+            difference_percent=0.5,
+            severity="warning",
+        )
+    )
+    session.commit()
+    eligibility = client.get(f"/v1/funds/{fund.id}/eligibility").json()
+    assert eligibility["eligible"] is False
+    assert eligibility["reason"] == "insufficient_history"
+    provenance = client.get(f"/v1/funds/{fund.id}/provenance").json()
+    assert provenance["fields"][0]["field"] == "nav"
+    assert provenance["conflicts"][0]["difference_percent"] == 0.5
 
 
 def test_admin_refresh_is_disabled_without_key(client: TestClient) -> None:
