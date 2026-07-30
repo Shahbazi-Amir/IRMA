@@ -73,6 +73,46 @@ def page_home() -> None:
         api_error(exc)
 
 
+def page_market_dashboard() -> None:
+    st.title("داشبورد چندبازاری")
+    try:
+        indices = get_json("/v1/market/indices", {"limit": 10})
+        inflation = get_json("/v1/economy/inflation", {"limit": 1})
+        banks = get_json("/v1/bank-products", {"limit": 10})
+        cols = st.columns(3)
+        cols[0].metric("رکورد شاخص", indices["count"])
+        cols[1].metric("رکورد تورم رسمی", inflation["count"])
+        cols[2].metric("محصول بانکی معتبر", banks["count"])
+        if indices["items"]:
+            st.subheader("شاخص‌های بازار")
+            st.dataframe(indices["items"], use_container_width=True, hide_index=True)
+        else:
+            st.warning("داده معتبر شاخص موجود نیست؛ مقدار حدسی نمایش داده نمی‌شود.")
+        if inflation["items"]:
+            st.subheader("تورم رسمی")
+            st.dataframe(inflation["items"], use_container_width=True, hide_index=True)
+        if banks["items"]:
+            st.subheader("شرایط فعلی و تأییدشده بانکی")
+            st.dataframe(banks["items"], use_container_width=True, hide_index=True)
+            st.caption("نرخ فعلی تضمین بازده آینده نیست و تاریخ اعتبار باید بررسی شود.")
+    except Exception as exc:
+        api_error(exc)
+
+
+def page_asset_classes() -> None:
+    st.title("مقایسه کلاس‌های دارایی")
+    try:
+        payload = get_json("/v1/asset-classes/comparison")
+        st.dataframe(payload["items"], use_container_width=True, hide_index=True)
+        st.caption(payload["notice"])
+        st.info(
+            "مقدار null یعنی داده کافی موجود نیست؛ نرخ تاریخی، شرط فعلی، فرض سناریو و "
+            "پیشنهاد قاعده‌محور مفاهیم جداگانه‌اند."
+        )
+    except Exception as exc:
+        api_error(exc)
+
+
 def profile_form() -> dict[str, Any] | None:
     with st.form("investor-profile"):
         capital = st.number_input(
@@ -176,6 +216,9 @@ def page_recommendation() -> None:
     st.caption(f"زمان پیشنهادی بازبینی: {result['review_at']}")
     for data in result["data_used"]:
         st.caption(f"منبع: {data['source']} | کیفیت: {data['quality']} | {data['note']}")
+    with st.expander("برنامه بازبینی و تعادل مجدد"):
+        st.write("بازبینی عادی هر سه ماه و هشدار انحراف در ۵ واحد درصد.")
+        st.caption("اصلاح با واریز جدید بر فروش غیرضروری اولویت دارد.")
 
 
 def page_funds() -> None:
@@ -204,6 +247,15 @@ def page_funds() -> None:
                 st.caption(payload["data_notice"])
             except Exception as exc:
                 api_error(exc)
+    st.subheader("صندوق‌های طلا: NAV در برابر قیمت بازار")
+    try:
+        gold = get_json("/v1/market/gold-funds")
+        if gold["items"]:
+            st.dataframe(gold["items"], use_container_width=True, hide_index=True)
+        else:
+            st.warning("داده بازار و نگاشت تأییدشده صندوق طلا موجود نیست.")
+    except Exception as exc:
+        api_error(exc)
 
 
 def page_compound() -> None:
@@ -311,6 +363,8 @@ def page_about() -> None:
 
 PAGES = {
     "خانه": page_home,
+    "داشبورد بازار": page_market_dashboard,
+    "مقایسه کلاس‌های دارایی": page_asset_classes,
     "پروفایل سرمایه‌گذار": page_profile,
     "پیشنهاد سبد": page_recommendation,
     "مقایسه صندوق‌ها": page_funds,
