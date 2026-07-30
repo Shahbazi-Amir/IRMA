@@ -72,6 +72,21 @@ def test_data_status_lists_unavailable_adapters(client: TestClient) -> None:
     assert any(item["name"] == "real-estate" for item in body["unavailable_adapters"])
 
 
+def test_fund_provider_status_and_sanitized_diagnostics(client: TestClient) -> None:
+    status = client.get("/v1/providers/funds/status")
+    assert status.status_code == 200
+    assert status.json()["contract"] == "auto"
+    diagnostics = client.get("/v1/providers/funds/diagnostics")
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["items"] == []
+    assert "tokens" in diagnostics.json()["notice"].lower()
+
+
+def test_missing_fund_eligibility_and_provenance_are_404(client: TestClient) -> None:
+    assert client.get("/v1/funds/999/eligibility").status_code == 404
+    assert client.get("/v1/funds/999/provenance").status_code == 404
+
+
 def test_admin_refresh_is_disabled_without_key(client: TestClient) -> None:
     response = client.post("/v1/admin/data-refresh")
     assert response.status_code == 503
