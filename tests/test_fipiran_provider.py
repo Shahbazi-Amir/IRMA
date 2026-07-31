@@ -78,9 +78,9 @@ def test_fipiran_provider_parses_catalogue_and_history() -> None:
     assert history[0].nav == 999
 
 
-def test_fipiran_provider_rejects_duplicate_identity() -> None:
+def test_fipiran_provider_deduplicates_identical_identity() -> None:
     payload = json.loads(_catalogue())
-    payload["items"].append(payload["items"][0])
+    payload["items"].append(payload["items"][0].copy())
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=payload, request=request)
@@ -90,7 +90,26 @@ def test_fipiran_provider_rejects_duplicate_identity() -> None:
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         min_interval_seconds=0,
     )
-    with pytest.raises(ValueError, match="duplicate"):
+
+    assert len(provider.fetch()) == 1
+
+
+def test_fipiran_provider_rejects_conflicting_duplicate_identity() -> None:
+    payload = json.loads(_catalogue())
+    duplicate = payload["items"][0].copy()
+    duplicate["cancelNav"] += 1
+    payload["items"].append(duplicate)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload, request=request)
+
+    provider = FipiranFundProvider(
+        base_url="https://fixture.test/services",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate"):
         provider.fetch()
 
 

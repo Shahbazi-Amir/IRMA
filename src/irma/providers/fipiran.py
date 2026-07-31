@@ -254,11 +254,25 @@ class FipiranFundProvider:
         if payload.status != 200:
             raise ValueError(f"FIPIRAN returned status {payload.status}")
         records: list[FundRecord] = []
-        seen: set[str] = set()
+        seen: dict[str, tuple[object, ...]] = {}
         for item in payload.items:
-            if item.reg_no in seen:
-                raise ValueError(f"duplicate FIPIRAN regNo: {item.reg_no}")
-            seen.add(item.reg_no)
+            identity_signature = (
+                item.fund_type,
+                item.initiation_date,
+                item.small_symbol_name,
+                item.type_of_invest,
+                item.cancel_nav,
+                item.statistical_nav,
+                item.net_asset,
+                item.manager,
+                item.date,
+            )
+            previous_signature = seen.get(item.reg_no)
+            if previous_signature is not None:
+                if previous_signature != identity_signature:
+                    raise ValueError(f"conflicting duplicate FIPIRAN regNo: {item.reg_no}")
+                continue
+            seen[item.reg_no] = identity_signature
             fund_type = FUND_TYPES.get(item.fund_type)
             if fund_type is None:
                 continue
