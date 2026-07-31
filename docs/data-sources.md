@@ -9,7 +9,7 @@ Provider خودکار صندوق‌ها از سرویس عمومی FIPIRAN اس�
 
 - فهرست و آخرین NAV: `POST /services/fund/fundcompare/`
 - تاریخچه NAV: `GET /services/chart/getfundchart?regno=...&showAll=true`
-- شناسه پایدار: شماره ثبت صندوق (`regNo`)
+- شناسه پایدار Catalogue فایپیران: ترکیب (`regNo`, `groupId`)
 - واحد داده منبع: ریال
 
 برای فعال‌سازی:
