@@ -19,3 +19,4 @@ def test_streamlit_app_parses_and_contains_required_pages() -> None:
     ]:
         assert page in text
     assert "direction: rtl" in text
+    assert "python scripts/bootstrap_data.py" in text

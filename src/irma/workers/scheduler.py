@@ -5,7 +5,7 @@ import time
 
 from irma.config import get_settings
 from irma.persistence.database import SessionLocal
-from irma.services.data_refresh import refresh_from_configured_csv
+from irma.services.data_refresh import refresh_from_settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,7 @@ def run() -> None:
     while True:
         with SessionLocal() as session:
             try:
-                refresh_from_configured_csv(
-                    session,
-                    csv_path=settings.fund_csv_path,
-                    max_retries=settings.provider_max_retries,
-                )
+                refresh_from_settings(session, settings)
             except (OSError, ValueError):
                 logger.exception("scheduled refresh failed; last healthy data remains available")
         time.sleep(settings.refresh_interval_minutes * 60)

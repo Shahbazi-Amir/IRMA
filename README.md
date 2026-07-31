@@ -47,6 +47,7 @@ cp .env.example .env
 # برای توسعه ساده:
 export IRMA_DATABASE_URL=sqlite:///./irma.db
 alembic upgrade head
+IRMA_FUND_PROVIDER=fipiran python scripts/bootstrap_data.py
 uvicorn irma.main:app --reload
 ```
 
@@ -63,6 +64,8 @@ IRMA هیچ رکورد نمونه را به‌عنوان داده واقعی ث�
 ```env
 IRMA_FUND_PROVIDER=fipiran
 IRMA_FUND_HISTORY_LIMIT=25
+# برای تمام صندوق‌های فعال:
+IRMA_FUND_HISTORY_ALL=true
 ```
 
 یا فایل CSV معتبر را در `data/imports/funds.csv` قرار دهید. ستون‌های الزامی:
@@ -89,6 +92,12 @@ Header: X-IRMA-Admin-Key
 ```bash
 python scripts/refresh_data.py
 ```
+
+`bootstrap_data.py` Migration، اتصال دیتابیس، ورود فهرست و تاریخچه، محاسبه
+معیارها و تعداد نهایی رکوردها را یکجا بررسی می‌کند. اجرای مجدد idempotent است.
+`IRMA_FUND_PROVIDER` یکی از `csv`، `fipiran` یا `chain` است. حالت `chain`
+ابتدا FIPIRAN و سپس فایل رسمی `IRMA_OFFICIAL_FUND_FILE_PATH` را امتحان می‌کند
+و منبع انتخاب‌شده را در گزارش نگه می‌دارد؛ Fixture هیچ‌گاه fallback تولید نیست.
 
 تشخیص محدود و Backfill:
 
@@ -133,8 +142,9 @@ python scripts/check_repo_safety.py
 - `IRMA_CORS_ORIGINS`: Originهای مجاز با کاما
 - `IRMA_ADMIN_KEY`: محافظ Refresh مدیریتی؛ بدون مقدار Endpoint غیرفعال است
 - `IRMA_FUND_CSV_PATH`: مسیر CSV صندوق‌ها
-- `IRMA_FUND_PROVIDER`: یکی از `csv` یا `fipiran`
-- `IRMA_FUND_HISTORY_LIMIT`: سقف تاریخچه صندوق‌ها در هر Refresh
+- `IRMA_FUND_PROVIDER`: یکی از `csv`، `fipiran` یا `chain`
+- `IRMA_FUND_HISTORY_LIMIT`: صفر یعنی بدون تاریخچه؛ مقدار مثبت یعنی حداکثر همان تعداد
+- `IRMA_FUND_HISTORY_ALL`: دریافت تاریخچه همه صندوق‌های فعال و نادیده‌گرفتن Limit
 - `IRMA_MARKET_INDEX_CSV_PATH`: فایل منبع‌دار شاخص‌های بازار
 - `IRMA_INSTRUMENT_MARKET_CSV_PATH`: فایل OHLCV ابزارهای بازار
 - `IRMA_INFLATION_CSV_PATH`: فایل رسمی تورم با سال پایه و تاریخ انتشار

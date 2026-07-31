@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     fipiran_history_path: str = "chart/getfundchart"
     fipiran_user_agent: str = "IRMA/1.0 (+https://github.com/Shahbazi-Amir/IRMA)"
     fund_history_limit: int = Field(default=25, ge=0, le=500)
+    fund_history_all: bool = False
     provider_min_interval_seconds: float = Field(default=0.25, ge=0, le=10)
     provider_circuit_failures: int = Field(default=3, ge=1, le=20)
     provider_circuit_cooldown_seconds: int = Field(default=300, ge=1, le=86400)

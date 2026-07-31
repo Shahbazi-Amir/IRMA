@@ -9,6 +9,20 @@ Workflow هفتگی یا دستی `Live FIPIRAN Validation` حداکثر سه ت
 IRMA_APP_ENV=e2e IRMA_FUND_PROVIDER=fipiran python scripts/live_data_validation.py
 ```
 
+برای Smoke کامل Bootstrap روی SQLite تازه:
+
+```bash
+IRMA_DATABASE_URL=sqlite:///./live-smoke.db \
+IRMA_FUND_PROVIDER=fipiran \
+IRMA_FUND_HISTORY_LIMIT=2 \
+python scripts/bootstrap_data.py
+```
+
+سپس API و رابط را با فرمان‌های README اجرا کنید و `/health`، `/v1/funds`،
+`/v1/data-sources/status` و صفحه «مقایسه صندوق‌ها» را بررسی کنید. Workflow
+`Live FIPIRAN Validation` همین Bootstrap را هفتگی و با اجرای دستی انجام می‌دهد،
+گزارش JSON را Artifact می‌کند و در شکست منبع هیچ Fixture جایگزین نمی‌کند.
+
 Workflow ابتدا Diagnostics، سپس Refresh محدود، Analytics و Ranking را اجرا می‌کند و
 Artifact شامل Contract، وضعیت Provider، تعداد صندوق/تاریخچه/واجدشرایط و ابزار واقعی
 پیشنهادی می‌سازد. شکست منبع از شکست کد جداست. Issue ثابت

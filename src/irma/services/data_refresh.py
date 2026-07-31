@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from httpx import HTTPError
 from sqlalchemy import func, select
@@ -24,6 +25,7 @@ from irma.persistence.models import (
     FundNavHistory,
 )
 from irma.providers.base import FundNavRecord, FundProvider, FundRecord, HistoricalFundProvider
+from irma.providers.chain import FundDataProviderChain
 from irma.providers.csv_provider import CsvFundProvider
 from irma.providers.fipiran import FipiranFundProvider
 
@@ -77,8 +79,8 @@ class RefreshCoordinator:
         session: Session,
         provider: FundProvider,
         *,
-        history_limit: int = 0,
-    ) -> dict[str, int | str]:
+        history_limit: int | None = 0,
+    ) -> dict[str, Any]:
         if not _refresh_lock.acquire(blocking=False):
             raise RefreshAlreadyRunningError("a data refresh is already running")
         run = DataIngestionRun(status="running")
@@ -89,6 +91,7 @@ class RefreshCoordinator:
             run.records_received = len(records)
             written = 0
             history_written = 0
+            history_errors: list[str] = []
             for record in records:
                 source = session.scalar(
                     select(DataSource).where(DataSource.name == record.metadata.source_name)
@@ -193,7 +196,9 @@ class RefreshCoordinator:
                     )
                 source.record_count += 1
                 written += 1
-            if isinstance(provider, HistoricalFundProvider) and history_limit > 0:
+            if isinstance(provider, HistoricalFundProvider) and (
+                history_limit is None or history_limit > 0
+            ):
                 history_counts: dict[str, int] = {}
                 for record in records:
                     if not record.is_active:
@@ -206,38 +211,49 @@ class RefreshCoordinator:
                         )
                         or 0
                     )
-                eligible = sorted(
+                eligible_records = sorted(
                     (record for record in records if record.is_active),
                     key=lambda record: (history_counts[record.external_id], record.external_id),
-                )[:history_limit]
+                )
+                eligible = (
+                    eligible_records if history_limit is None else eligible_records[:history_limit]
+                )
                 for record in eligible:
                     fund = session.scalar(
                         select(Fund).where(Fund.external_id == record.external_id)
                     )
                     assert fund is not None
-                    for nav_record in self.fetch_history_with_retry(provider, record.external_id):
-                        existing = session.scalar(
-                            select(FundNavHistory.id).where(
-                                FundNavHistory.fund_id == fund.id,
-                                FundNavHistory.valid_at == nav_record.observed_at.date(),
+                    try:
+                        nav_records = self.fetch_history_with_retry(provider, record.external_id)
+                        for nav_record in nav_records:
+                            existing = session.scalar(
+                                select(FundNavHistory.id).where(
+                                    FundNavHistory.fund_id == fund.id,
+                                    FundNavHistory.valid_at == nav_record.observed_at.date(),
+                                )
                             )
-                        )
-                        if existing is not None:
-                            continue
-                        session.add(
-                            FundNavHistory(
-                                fund_id=fund.id,
-                                nav=Decimal(str(nav_record.nav)),
-                                total_net_assets=Decimal(str(nav_record.total_net_assets))
-                                if nav_record.total_net_assets is not None
-                                else None,
-                                source_id=fund.source_id,
-                                observed_at=nav_record.observed_at,
-                                valid_at=nav_record.observed_at.date(),
-                                quality_status=nav_record.metadata.quality.value,
+                            if existing is not None:
+                                continue
+                            session.add(
+                                FundNavHistory(
+                                    fund_id=fund.id,
+                                    nav=Decimal(str(nav_record.nav)),
+                                    total_net_assets=Decimal(str(nav_record.total_net_assets))
+                                    if nav_record.total_net_assets is not None
+                                    else None,
+                                    source_id=fund.source_id,
+                                    observed_at=nav_record.observed_at,
+                                    valid_at=nav_record.observed_at.date(),
+                                    quality_status=nav_record.metadata.quality.value,
+                                )
                             )
+                            history_written += 1
+                    except (OSError, HTTPError, RuntimeError, ValueError) as exc:
+                        history_errors.append(f"{record.external_id}: {type(exc).__name__}")
+                        logger.warning(
+                            "fund history refresh failed",
+                            extra={"external_id": record.external_id, "error": type(exc).__name__},
                         )
-                        history_written += 1
                     session.flush()
                     _refresh_metrics(session, fund)
             run.records_written = written
@@ -250,6 +266,7 @@ class RefreshCoordinator:
                 "records_received": len(records),
                 "records_written": written,
                 "history_written": history_written,
+                "history_errors": history_errors,
             }
         except Exception as exc:
             session.rollback()
@@ -270,7 +287,7 @@ def refresh_from_configured_csv(
     *,
     csv_path: str,
     max_retries: int,
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     provider = CsvFundProvider(Path(csv_path))
     return RefreshCoordinator(max_retries=max_retries).refresh_funds(session, provider)
 
@@ -282,13 +299,13 @@ def refresh_from_fipiran(
     timeout_seconds: int,
     max_retries: int,
     min_interval_seconds: float,
-    history_limit: int,
+    history_limit: int | None,
     catalog_path: str = "fund/fundcompare/",
     history_path: str = "chart/getfundchart",
     user_agent: str = "IRMA/1.0 (+https://github.com/Shahbazi-Amir/IRMA)",
     failure_threshold: int = 3,
     cooldown_seconds: float = 300,
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     with FipiranFundProvider(
         base_url=base_url,
         timeout_seconds=timeout_seconds,
@@ -303,6 +320,74 @@ def refresh_from_fipiran(
         return RefreshCoordinator(max_retries=0).refresh_funds(
             session, provider, history_limit=history_limit
         )
+
+
+def refresh_from_settings(session: Session, settings: Any) -> dict[str, Any]:
+    """Run the configured provider through one shared CLI/API/scheduler path."""
+    started_at = datetime.now(UTC)
+    history_limit = None if settings.fund_history_all else settings.fund_history_limit
+    provider_name = settings.fund_provider
+    try:
+        if provider_name == "csv":
+            result = refresh_from_configured_csv(
+                session,
+                csv_path=settings.fund_csv_path,
+                max_retries=settings.provider_max_retries,
+            )
+        elif provider_name == "fipiran":
+            result = refresh_from_fipiran(
+                session,
+                base_url=settings.fipiran_base_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+                max_retries=settings.provider_max_retries,
+                min_interval_seconds=settings.provider_min_interval_seconds,
+                history_limit=history_limit,
+                catalog_path=settings.fipiran_catalog_path,
+                history_path=settings.fipiran_history_path,
+                user_agent=settings.fipiran_user_agent,
+                failure_threshold=settings.provider_circuit_failures,
+                cooldown_seconds=settings.provider_circuit_cooldown_seconds,
+            )
+        else:
+            live = FipiranFundProvider(
+                base_url=settings.fipiran_base_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+                min_interval_seconds=settings.provider_min_interval_seconds,
+                retries=settings.provider_max_retries,
+                catalog_path=settings.fipiran_catalog_path,
+                history_path=settings.fipiran_history_path,
+                user_agent=settings.fipiran_user_agent,
+                failure_threshold=settings.provider_circuit_failures,
+                cooldown_seconds=settings.provider_circuit_cooldown_seconds,
+            )
+            chain = FundDataProviderChain(
+                [
+                    ("fipiran", live),
+                    ("official-file", CsvFundProvider(Path(settings.official_fund_file_path))),
+                ]
+            )
+            try:
+                result = RefreshCoordinator(max_retries=0).refresh_funds(
+                    session, chain, history_limit=history_limit
+                )
+                if chain.last_result is not None:
+                    result["selected_source"] = chain.last_result.provider
+                    result["fallback_errors"] = chain.last_result.errors
+            finally:
+                chain.close()
+        finished_at = datetime.now(UTC)
+        return {
+            **result,
+            "provider": provider_name,
+            "started_at": started_at.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "duration_seconds": round((finished_at - started_at).total_seconds(), 3),
+        }
+    except RefreshAlreadyRunningError:
+        raise
+    except Exception as exc:
+        logger.error("configured refresh failed", extra={"provider": provider_name})
+        raise RuntimeError(f"{provider_name} refresh failed: {type(exc).__name__}: {exc}") from exc
 
 
 def _refresh_metrics(session: Session, fund: Fund) -> None:
