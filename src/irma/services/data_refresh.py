@@ -115,15 +115,6 @@ class RefreshCoordinator:
                 source.raw_hash = record.metadata.raw_hash
 
                 fund = session.scalar(select(Fund).where(Fund.external_id == record.external_id))
-                if record.symbol:
-                    fund = fund or session.scalar(select(Fund).where(Fund.symbol == record.symbol))
-                if fund is None:
-                    fund = session.scalar(
-                        select(Fund).where(
-                            Fund.name_fa == record.name_fa,
-                            Fund.fund_type == record.fund_type,
-                        )
-                    )
                 if fund is None:
                     fund = Fund(name_fa=record.name_fa, fund_type=record.fund_type)
                     session.add(fund)

@@ -3,11 +3,14 @@ from datetime import date, timedelta
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from irma.persistence.models import Fund, FundNavHistory
 from irma.providers.fipiran import (
     CircuitOpenError,
     FipiranFundProvider,
+    HistoryIdentityError,
     ProviderBlockedError,
     ProviderContractError,
 )
@@ -22,14 +25,16 @@ def _catalogue() -> bytes:
             "items": [
                 {
                     "regNo": "11215",
+                    "groupId": 1,
+                    "insCode": "IRTEST11215",
                     "name": "توسعه اطلس مفید",
                     "fundType": 23,
                     "date": "2026-07-29T00:00:00",
                     "initiationDate": "2014-12-23T00:00:00",
                     "smallSymbolName": "اطلس",
                     "typeOfInvest": "Negotiable",
-                    "cancelNav": 63875,
-                    "statisticalNav": 63875,
+                    "cancelNav": 999 + MIN_OBSERVATIONS + 29,
+                    "statisticalNav": 999 + MIN_OBSERVATIONS + 29,
                     "netAsset": 42529338176194,
                     "manager": "سبدگردان مفید",
                     "isCompleted": True,
@@ -70,7 +75,7 @@ def test_fipiran_provider_parses_catalogue_and_history() -> None:
         min_interval_seconds=0,
     )
     record = provider.fetch()[0]
-    assert record.external_id == "11215"
+    assert record.external_id == "fipiran:11215:1"
     assert record.fund_type == "index"
     assert record.is_etf is True
     history = provider.fetch_nav_history(record.external_id)
@@ -97,7 +102,7 @@ def test_fipiran_provider_deduplicates_identical_identity() -> None:
 def test_fipiran_provider_rejects_conflicting_duplicate_identity() -> None:
     payload = json.loads(_catalogue())
     duplicate = payload["items"][0].copy()
-    duplicate["cancelNav"] += 1
+    duplicate["name"] = "صندوق دیگر"
     payload["items"].append(duplicate)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -109,8 +114,204 @@ def test_fipiran_provider_rejects_conflicting_duplicate_identity() -> None:
         min_interval_seconds=0,
     )
 
-    with pytest.raises(ValueError, match="conflicting duplicate"):
+    with pytest.raises(ProviderContractError, match="conflicting duplicate"):
         provider.fetch()
+
+
+def _multi_group_catalogue(*, include_primary: bool = True) -> bytes:
+    items = [
+        {
+            "regNo": "12181",
+            "groupId": 2,
+            "insCode": "INS-G2",
+            "name": "متال فرعی",
+            "fundType": 5,
+            "date": "2026-07-29T00:00:00",
+            "smallSymbolName": "متال",
+            "typeOfInvest": "Negotiable",
+            "cancelNav": 27167,
+            "statisticalNav": 27663,
+            "netAsset": 200,
+            "isCompleted": True,
+        },
+        {
+            "regNo": "12181",
+            "groupId": 3,
+            "insCode": "INS-G3",
+            "name": "سیمانا",
+            "fundType": 5,
+            "date": "2026-07-29T00:00:00",
+            "smallSymbolName": "سیمانا",
+            "typeOfInvest": "Negotiable",
+            "cancelNav": 32446,
+            "statisticalNav": 32446,
+            "netAsset": 300,
+            "isCompleted": True,
+        },
+        {
+            "regNo": "12181",
+            "groupId": 4,
+            "insCode": None,
+            "name": "مزه",
+            "fundType": 5,
+            "date": "2026-07-29T00:00:00",
+            "smallSymbolName": "مزه",
+            "typeOfInvest": "Negotiable",
+            "cancelNav": 24643,
+            "statisticalNav": 24643,
+            "netAsset": 400,
+            "isCompleted": True,
+        },
+    ]
+    if include_primary:
+        items.insert(
+            0,
+            {
+                "regNo": "12181",
+                "groupId": 1,
+                "insCode": "INS-G1",
+                "name": "متال اصلی",
+                "fundType": 5,
+                "date": "2026-07-28T00:00:00",
+                "smallSymbolName": "متال",
+                "typeOfInvest": "Negotiable",
+                "cancelNav": 27104,
+                "statisticalNav": 27196,
+                "netAsset": 100,
+                "isCompleted": True,
+            },
+        )
+    return json.dumps({"status": 200, "items": items}).encode()
+
+
+def _12181_history() -> bytes:
+    return json.dumps(
+        [
+            {
+                "date": "2026-07-29T00:00:00",
+                "cancelNav": 27104,
+                "statisticalNav": 27196,
+            }
+        ]
+    ).encode()
+
+
+def test_catalogue_preserves_real_12181_groups_and_duplicate_symbol() -> None:
+    provider = FipiranFundProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, content=_multi_group_catalogue())
+            )
+        ),
+        min_interval_seconds=0,
+    )
+    records = provider.fetch()
+    assert [record.external_id for record in records] == [
+        "fipiran:12181:1",
+        "fipiran:12181:2",
+        "fipiran:12181:3",
+        "fipiran:12181:4",
+    ]
+    assert [record.symbol for record in records].count("متال") == 2
+    assert len({record.name_fa for record in records}) == 4
+
+
+def test_history_is_attached_only_to_uniquely_matching_group() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_multi_group_catalogue() if request.method == "POST" else _12181_history(),
+            request=request,
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+    )
+    provider.fetch()
+    assert provider.fetch_nav_history("fipiran:12181:1")[0].nav == 27104
+    for group_id in (2, 3, 4):
+        with pytest.raises(HistoryIdentityError, match="does not uniquely match"):
+            provider.fetch_nav_history(f"fipiran:12181:{group_id}")
+
+
+def test_history_is_not_guessed_when_primary_group_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_multi_group_catalogue(include_primary=False)
+            if request.method == "POST"
+            else _12181_history(),
+            request=request,
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+    )
+    records = provider.fetch()
+    assert len(records) == 3
+    with pytest.raises(HistoryIdentityError, match=r"matches=\[\]"):
+        provider.fetch_nav_history(records[0].external_id)
+
+
+def test_more_than_one_nonidentical_primary_identity_is_rejected() -> None:
+    payload = json.loads(_multi_group_catalogue())
+    duplicate = payload["items"][0].copy()
+    duplicate["insCode"] = "OTHER-PRIMARY"
+    payload["items"].append(duplicate)
+    provider = FipiranFundProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=payload, request=request)
+            )
+        ),
+        min_interval_seconds=0,
+    )
+    with pytest.raises(ProviderContractError, match="groupId=1"):
+        provider.fetch()
+
+
+def test_realistic_12407_groups_are_not_signature_merged() -> None:
+    payload = json.loads(_multi_group_catalogue())
+    payload["items"] = payload["items"][:2]
+    for item in payload["items"]:
+        item["regNo"] = "12407"
+    provider = FipiranFundProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=payload, request=request)
+            )
+        ),
+        min_interval_seconds=0,
+    )
+    records = provider.fetch()
+    assert {record.external_id for record in records} == {
+        "fipiran:12407:1",
+        "fipiran:12407:2",
+    }
+
+
+def test_duplicate_symbols_and_multigroup_bootstrap_are_idempotent(session: Session) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_multi_group_catalogue() if request.method == "POST" else _12181_history(),
+            request=request,
+        )
+
+    provider = FipiranFundProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        min_interval_seconds=0,
+    )
+    coordinator = RefreshCoordinator(max_retries=0)
+    first = coordinator.refresh_funds(session, provider, history_limit=None)
+    second = coordinator.refresh_funds(session, provider, history_limit=None)
+    assert first["records_written"] == second["records_written"] == 4
+    assert session.scalar(select(func.count(Fund.id))) == 4
+    assert session.scalar(select(func.count(FundNavHistory.id))) == 5
+    assert len(first["history_errors"]) == 3
+    assert len(second["history_errors"]) == 3
 
 
 def test_refresh_is_idempotent_and_produces_ranking(session: Session) -> None:

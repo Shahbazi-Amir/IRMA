@@ -101,7 +101,7 @@ class Fund(Base, TimestampMixin):
     external_id: Mapped[str | None] = mapped_column(
         String(80), unique=True, nullable=True, index=True
     )
-    symbol: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     name_fa: Mapped[str] = mapped_column(String(200), index=True)
     fund_type: Mapped[str] = mapped_column(String(40), index=True)
     inception_date: Mapped[date | None] = mapped_column(Date, nullable=True)
