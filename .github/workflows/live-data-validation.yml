@@ -1,6 +1,9 @@
 name: Live FIPIRAN Validation
 
 on:
+  push:
+    branches:
+      - agent/fix-fipiran-record-identity
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 3"
