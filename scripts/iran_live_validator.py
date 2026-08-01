@@ -7,9 +7,12 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from collections.abc import Sequence
@@ -48,6 +51,7 @@ class ValidatorError(RuntimeError):
 class Host:
     server: str
     user: str
+    port: int = 22
 
 
 def validate_ip(value: str) -> str:
@@ -60,6 +64,10 @@ def validate_ip(value: str) -> str:
 def redact(text: str) -> str:
     text = SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
     return DATABASE_CREDENTIALS.sub(r"\1[REDACTED]@", text)
+
+
+def server_fingerprint(server: str) -> str:
+    return f"sha256:{hashlib.sha256(server.encode()).hexdigest()[:16]}"
 
 
 def run(
@@ -75,12 +83,12 @@ def run(
 
 
 def ssh_command(host: Host, remote_command: str) -> list[str]:
-    return ["ssh", *SSH_OPTIONS, f"{host.user}@{host.server}", remote_command]
+    return ["ssh", *SSH_OPTIONS, "-p", str(host.port), f"{host.user}@{host.server}", remote_command]
 
 
-def discover_ssh(server: str, users: Sequence[str] = USERS) -> Host:
+def discover_ssh(server: str, users: Sequence[str] = USERS, port: int = 22) -> Host:
     for user in users:
-        candidate = Host(server, user)
+        candidate = Host(server, user, port)
         result = run(ssh_command(candidate, "printf IRMA_SSH_OK"), check=False)
         if result.returncode == 0 and result.stdout == "IRMA_SSH_OK":
             return candidate
@@ -141,7 +149,7 @@ def classify_diagnostic(status: int | None, content_type: str, valid_json: bool)
     if status == 502:
         return "html_502" if "html" in content_type else "upstream_502"
     if status is None:
-        return "unreachable"
+        return "tcp_failure"
     if status >= 400:
         return "http_error"
     if "json" in content_type and not valid_json:
@@ -150,12 +158,92 @@ def classify_diagnostic(status: int | None, content_type: str, valid_json: bool)
 
 
 def write_error(status: str, server: str, message: str) -> None:
-    print(json.dumps({"status": status, "server": server, "message": message}, ensure_ascii=False))
+    safe = redact(message).replace(server, server_fingerprint(server))
+    print(
+        json.dumps(
+            {"status": status, "server": server_fingerprint(server), "message": safe},
+            ensure_ascii=False,
+        )
+    )
+
+
+def _public_key_info(path: Path) -> dict[str, str] | None:
+    result = run(["ssh-keygen", "-lf", str(path)], check=False)
+    if result.returncode:
+        return None
+    fields = result.stdout.split()
+    if len(fields) < 4:
+        return None
+    key = path.read_text().strip()
+    if not key.startswith(("ssh-ed25519 ", "ssh-rsa ", "ecdsa-")):
+        return None
+    return {"type": key.split()[0], "path": str(path), "fingerprint": fields[1], "public_key": key}
+
+
+def public_keys(ssh_dir: Path | None = None) -> list[dict[str, str]]:
+    root = ssh_dir or Path.home() / ".ssh"
+    candidates = [root / "id_ed25519.pub", root / "id_ecdsa.pub", root / "id_rsa.pub"]
+    return [info for path in candidates if path.is_file() and (info := _public_key_info(path))]
+
+
+def doctor(ref: str, artifacts: Path) -> dict[str, Any]:
+    commands = {
+        name: shutil.which(name) is not None for name in ("git", "ssh", "scp", "rsync", "tar")
+    }
+    repo = run(["git", "rev-parse", "--show-toplevel"], check=False)
+    origin = (
+        run(["git", "remote", "get-url", "origin"], check=False)
+        if repo.returncode == 0
+        else result_placeholder()
+    )
+    ref_ok = True
+    ref_error = None
+    try:
+        resolved = source_sha(ref)
+    except ValidatorError as exc:
+        ref_ok, resolved, ref_error = False, None, str(exc)
+    artifacts.mkdir(parents=True, exist_ok=True)
+    writable = os.access(artifacts, os.W_OK)
+    keys = public_keys()
+    agent = bool(os.environ.get("SSH_AUTH_SOCK"))
+    ready = (
+        all(commands.values())
+        and repo.returncode == 0
+        and origin.returncode == 0
+        and ref_ok
+        and writable
+        and bool(keys or agent)
+    )
+    return {
+        "status": "ready" if ready else "not_ready",
+        "python": sys.version.split()[0],
+        **commands,
+        "repository": repo.returncode == 0,
+        "origin": origin.returncode == 0,
+        "target_ref": ref,
+        "target_sha": resolved,
+        "ref_error": ref_error,
+        "ssh_agent": agent,
+        "public_keys": [{k: v for k, v in item.items() if k != "public_key"} for item in keys],
+        "artifact_directory_writable": writable,
+    }
+
+
+def result_placeholder() -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess([], 1, "", "")
 
 
 def upload(host: Host, local: Path, remote: str) -> None:
     result = run(
-        ["scp", *SSH_OPTIONS, str(local), f"{host.user}@{host.server}:{remote}"], check=False
+        [
+            "scp",
+            *SSH_OPTIONS,
+            "-P",
+            str(host.port),
+            str(local),
+            f"{host.user}@{host.server}:{remote}",
+        ],
+        check=False,
     )
     if result.returncode:
         raise ValidatorError("source_upload_failed", redact(result.stderr.strip()))
@@ -167,6 +255,8 @@ def retrieve(host: Host, destination: Path) -> None:
         [
             "scp",
             *SSH_OPTIONS,
+            "-P",
+            str(host.port),
             "-r",
             f"{host.user}@{host.server}:{REMOTE_ARTIFACTS}/.",
             str(destination),
@@ -179,8 +269,12 @@ def retrieve(host: Host, destination: Path) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", required=True, type=validate_ip)
+    parser.add_argument("--server", type=validate_ip)
     parser.add_argument("--ref", default="main")
+    parser.add_argument("--doctor", action="store_true")
+    parser.add_argument("--show-public-key", action="store_true")
+    parser.add_argument("--ssh-user")
+    parser.add_argument("--ssh-port", type=int, default=22)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--preflight", action="store_true")
     mode.add_argument("--provision-only", action="store_true")
@@ -190,8 +284,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--artifacts", type=Path, default=ROOT / "artifacts" / "iran-live-validation"
     )
     args = parser.parse_args(argv)
+    if args.doctor:
+        print(json.dumps(doctor(args.ref, args.artifacts), indent=2))
+        return 0
+    if args.show_public_key:
+        keys = public_keys()
+        print(
+            json.dumps(
+                {"status": "success", **keys[0]} if keys else {"status": "ssh_public_key_missing"},
+                indent=2,
+            )
+        )
+        return 0 if keys else 1
+    if not args.server:
+        parser.error("--server is required for remote modes")
     try:
-        host = discover_ssh(args.server)
+        host = (
+            Host(args.server, args.ssh_user, args.ssh_port)
+            if args.ssh_user
+            else discover_ssh(args.server, port=args.ssh_port)
+        )
         os_info = inspect_host(host)
         with tempfile.TemporaryDirectory(prefix="irma-validator-") as temporary:
             temporary_path = Path(temporary)
@@ -214,7 +326,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sha = source_sha(args.ref)
             env = {
                 "IRMA_ACTION": action,
-                "IRMA_SERVER_HASH": hashlib.sha256(args.server.encode()).hexdigest()[:16],
+                "IRMA_SERVER_HASH": server_fingerprint(args.server).removeprefix("sha256:"),
                 "IRMA_TARGET_REF": args.ref,
                 "IRMA_TARGET_SHA": sha,
                 "IRMA_CLEANUP": "1" if args.cleanup else "0",

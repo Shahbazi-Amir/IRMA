@@ -90,7 +90,7 @@ def test_idempotency_success_and_failure() -> None:
         (502, "text/html", False, "html_502"),
         (200, "application/json", False, "invalid_json"),
         (200, "application/json", True, "reachable"),
-        (None, "", False, "unreachable"),
+        (None, "", False, "tcp_failure"),
         (503, "text/plain", False, "http_error"),
     ],
 )
@@ -111,9 +111,52 @@ def test_structured_auth_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     error = validator.ValidatorError("ssh_auth_required", "No usable SSH key was found.")
-    monkeypatch.setattr(validator, "discover_ssh", lambda server: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(
+        validator, "discover_ssh", lambda server, **kwargs: (_ for _ in ()).throw(error)
+    )
     assert validator.main(["--server", "192.0.2.1"]) == 1
     assert json.loads(capsys.readouterr().out)["status"] == "ssh_auth_required"
+
+
+def test_structured_error_never_leaks_server(capsys: pytest.CaptureFixture[str]) -> None:
+    validator.write_error("failed", "192.0.2.44", "ssh to 192.0.2.44 failed")
+    output = capsys.readouterr().out
+    assert "192.0.2.44" not in output
+    assert json.loads(output)["server"].startswith("sha256:")
+
+
+def test_doctor_does_not_require_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(validator, "doctor", lambda ref, artifacts: {"status": "ready"})
+    assert validator.main(["--doctor", "--artifacts", str(tmp_path)]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ready"
+
+
+def test_remote_mode_requires_server() -> None:
+    with pytest.raises(SystemExit):
+        validator.main([])
+
+
+def test_public_key_preference_and_no_private_content(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ssh = tmp_path / ".ssh"
+    ssh.mkdir()
+    (ssh / "id_ed25519.pub").write_text("ssh-ed25519 AAAATEST user@example")
+    (ssh / "id_rsa.pub").write_text("ssh-rsa BBBTEST user@example")
+    monkeypatch.setattr(
+        validator, "run", lambda *a, **k: result(0, "256 SHA256:test key (ED25519)\n")
+    )
+    keys = validator.public_keys(ssh)
+    assert keys[0]["type"] == "ssh-ed25519"
+    assert "PRIVATE" not in json.dumps(keys)
+
+
+def test_custom_ssh_port_and_user() -> None:
+    command = validator.ssh_command(validator.Host("192.0.2.1", "custom", 2222), "true")
+    assert "custom@192.0.2.1" in command
+    assert command[command.index("-p") + 1] == "2222"
 
 
 def test_remote_script_covers_deployment_and_failure_modes() -> None:
@@ -135,3 +178,20 @@ def test_clone_and_github_independent_upload_modes_exist() -> None:
     assert "/tmp/irma-source.tar.gz" in script
     assert "git clone" in script
     assert "IRMA_DEPLOYMENT_MODE" in script
+
+
+def test_remote_hardening_contracts() -> None:
+    script = (SCRIPT.parent / "iran_live_validator_remote.sh").read_text()
+    assert 'method="POST" if data else "GET"' in script
+    assert '{"regNos":[],"showMarketMakers":False}' in script
+    assert "sudo -n true" in script
+    assert "sudo_auth_required" in script
+    assert "deb.debian.org" in script and "archive.ubuntu.com" in script
+    assert "NTPSynchronized" in script
+    assert "/tmp/irma-wheelhouse/.validated" in script
+    assert "rm -rf /tmp/irma-wheelhouse /tmp/irma-validator-work" in script
+
+
+def test_generic_wrapper_ref() -> None:
+    wrapper = (SCRIPT.parent / "validate_from_iran.sh").read_text()
+    assert "${2:-agent/fix-fipiran-record-identity}" in wrapper
