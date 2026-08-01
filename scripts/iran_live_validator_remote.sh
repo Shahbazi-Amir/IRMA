@@ -10,6 +10,42 @@ LOG_ROOT=/var/log/irma-validator
 APP_USER=irma-validator
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# Mutation-free shell preflight: minimal images may not have Python yet.
+missing=()
+for tool in sudo apt-get systemctl; do command -v "$tool" >/dev/null 2>&1 || missing+=("$tool"); done
+if ! command -v python3 >/dev/null 2>&1; then
+  printf '{"status":"python_missing"}\n'
+  [[ "$ACTION" == preflight ]] && exit 10
+  PYTHON_MISSING=1
+else
+  PYTHON_MISSING=0
+fi
+if [[ $(id -u) -eq 0 ]]; then
+  SUDO=
+elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  SUDO="sudo -n"
+else
+  printf '{"status":"sudo_auth_required"}\n'
+  exit 11
+fi
+if ((${#missing[@]})) && [[ "$ACTION" == preflight ]]; then
+  printf '{"status":"missing_prerequisites","commands":"%s"}\n' "${missing[*]}"
+  exit 12
+fi
+if [[ "$PYTHON_MISSING" == 1 ]]; then
+  command -v apt-get >/dev/null 2>&1 || { printf '{"status":"python_install_unavailable"}\n'; exit 13; }
+  $SUDO apt-get update -qq
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3
+fi
+
+if [[ -r /etc/os-release ]]; then . /etc/os-release; fi
+case "${ID:-unknown}" in
+  ubuntu) PACKAGE_URL=https://archive.ubuntu.com/ubuntu/ ;;
+  debian) PACKAGE_URL=https://deb.debian.org/debian/ ;;
+  *) PACKAGE_URL="" ;;
+esac
+export PACKAGE_URL
+
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 write_failure() {
   local status=$1 message=$2
@@ -17,12 +53,13 @@ write_failure() {
 }
 trap 'code=$?; write_failure remote_failure "remote validator exited with status $code"; exit $code' ERR
 
-mkdir -p "$ARTIFACTS"
+$SUDO mkdir -p "$ARTIFACTS"
+$SUDO chown "$(id -u):$(id -g)" "$ARTIFACTS"
 chmod 700 "$ARTIFACTS"
 
 network_diagnostics() {
   python3 - "$ARTIFACTS/iran-network-diagnostics.json" <<'PY'
-import json, socket, ssl, sys, time, urllib.error, urllib.request
+import hashlib, json, os, socket, ssl, subprocess, sys, time, urllib.error, urllib.request
 from urllib.parse import urlparse
 targets = {
  "fipiran_website":"https://www.fipiran.com/",
@@ -30,28 +67,53 @@ targets = {
  "fipiran_history":"https://www.fipiran.com/services/chart/getfundchart?regno=12181&showAll=false",
  "github":"https://github.com/", "github_api":"https://api.github.com/",
  "github_objects":"https://objects.githubusercontent.com/", "pypi":"https://pypi.org/simple/",
- "python_files":"https://files.pythonhosted.org/", "package_repository":"https://archive.ubuntu.com/ubuntu/",
+ "python_files":"https://files.pythonhosted.org/", "package_repository":os.environ.get("PACKAGE_URL", ""),
 }
 results = {}
 for name, url in targets.items():
+    if not url: continue
     host = urlparse(url).hostname or ""
-    item = {"dns": False, "tcp_443": False, "http_status": None, "content_type": None, "latency_ms": None}
+    item = {"dns": False, "tcp_443": False, "http_status": None, "content_type": None, "latency_ms": None, "valid_json":False}
     started = time.monotonic()
     try:
         socket.getaddrinfo(host, 443); item["dns"] = True
         with socket.create_connection((host, 443), timeout=8): item["tcp_443"] = True
-        request = urllib.request.Request(url, headers={"User-Agent":"IRMA-Iran-Validator/1.0"})
+        data = None
+        headers={"User-Agent":"IRMA-Iran-Validator/1.0"}
+        if name == "fipiran_catalogue":
+            data=json.dumps({"regNos":[],"showMarketMakers":False}).encode(); headers["Content-Type"]="application/json"
+        request = urllib.request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
         with urllib.request.urlopen(request, timeout=15, context=ssl.create_default_context()) as response:
-            body = response.read(1024); item["http_status"] = response.status
+            limit=8*1024*1024; body=response.read(limit+1); item["read_size"]=len(body)
+            if len(body)>limit: raise ValueError("response_too_large")
+            item["response_sha256"]=hashlib.sha256(body).hexdigest(); item["http_status"] = response.status
             item["content_type"] = response.headers.get_content_type()
-            item["valid_json"] = bool(json.loads(body)) if "json" in item["content_type"] else False
+            item["content_length"]=response.headers.get("Content-Length")
+            try:
+                parsed=json.loads(body); item["valid_json"]=True
+                expected=list if name=="fipiran_history" else (dict,list)
+                item["classification"]="reachable" if isinstance(parsed,expected) else "contract_mismatch"
+            except json.JSONDecodeError:
+                item["classification"]="invalid_json"
     except urllib.error.HTTPError as exc:
         item["http_status"] = exc.code; item["content_type"] = exc.headers.get_content_type()
-    except Exception as exc: item["error"] = type(exc).__name__
+        item["classification"]="html_502" if exc.code==502 and "html" in item["content_type"] else "http_error"
+    except socket.gaierror as exc: item.update(error=str(exc),classification="dns_failure")
+    except (socket.timeout,TimeoutError) as exc: item.update(error=str(exc),classification="timeout")
+    except ssl.SSLError as exc: item.update(error=str(exc),classification="tls_failure")
+    except (ConnectionError,OSError) as exc: item.update(error=str(exc),classification="tcp_failure")
+    except (ValueError,json.JSONDecodeError) as exc: item.update(error=str(exc),classification="invalid_json")
     item["latency_ms"] = round((time.monotonic()-started)*1000)
+    item.setdefault("classification","reachable" if item["http_status"] and item["http_status"]<400 else "http_error")
     results[name] = item
 results["dns_resolution"] = {"ok": any(v["dns"] for v in results.values())}
-results["time_sync"] = {"utc": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}
+sync="unknown"
+try:
+    value=subprocess.run(["timedatectl","show","-p","NTPSynchronized","--value"],capture_output=True,text=True,timeout=3).stdout.strip().lower()
+    if value in ("yes","true","1"): sync=True
+    elif value in ("no","false","0"): sync=False
+except Exception: pass
+results["time_sync"]={"checked":sync!="unknown","synchronized":sync}
 json.dump(results, open(sys.argv[1], "w"), indent=2)
 PY
 }
@@ -60,20 +122,20 @@ network_diagnostics
 if [[ "$ACTION" == preflight ]]; then
   python3 - "$ARTIFACTS/manifest.json" <<'PY'
 import json, os, platform, shutil, sys
+mem_kib=0
+try:
+    mem_kib=int(next(x.split()[1] for x in open('/proc/meminfo') if x.startswith('MemTotal:')))
+except Exception: pass
+disk=shutil.disk_usage('/').free
 json.dump({"status":"preflight_complete","server_region":"IR","server_ip_hash":os.getenv("IRMA_SERVER_HASH"),
- "os":platform.platform(),"architecture":platform.machine(),"disk_free":shutil.disk_usage('/').free,
+ "os":platform.platform(),"architecture":platform.machine(),"disk_free_bytes":disk,"ram_bytes":mem_kib*1024,
+ "cpu_count":os.cpu_count(),"resource_warnings":[x for x,bad in (("low_ram",mem_kib<1024*1024),("low_disk",disk<5*1024**3)) if bad],
  "target_ref":os.getenv("IRMA_TARGET_REF"),"fixture_used":False}, open(sys.argv[1],"w"), indent=2)
 PY
   exit 0
 fi
-
-if [[ $(id -u) -ne 0 ]]; then
-  SUDO=sudo
-else
-  SUDO=
-fi
 $SUDO apt-get update -qq
-$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-venv python3-pip postgresql postgresql-client git rsync ca-certificates
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-venv python3-pip postgresql postgresql-client git rsync ca-certificates
 if ! id "$APP_USER" >/dev/null 2>&1; then $SUDO useradd --system --home "$APP_ROOT" --shell /usr/sbin/nologin "$APP_USER"; fi
 $SUDO mkdir -p "$APP_ROOT" "$STATE_ROOT" "$LOG_ROOT" "$ARTIFACTS"
 $SUDO chown -R "$APP_USER:$APP_USER" "$APP_ROOT" "$STATE_ROOT" "$LOG_ROOT"
@@ -97,7 +159,7 @@ SQL
 
 $SUDO find "$APP_ROOT" -mindepth 1 -maxdepth 1 ! -name venv -exec rm -rf -- {} +
 run_as_app() {
-  if [[ $(id -u) -eq 0 ]]; then runuser -u "$APP_USER" -- "$@"; else sudo -u "$APP_USER" -- "$@"; fi
+  if [[ $(id -u) -eq 0 ]]; then runuser -u "$APP_USER" -- "$@"; else sudo -n -u "$APP_USER" -- "$@"; fi
 }
 if [[ "${IRMA_DEPLOYMENT_MODE:-upload}" == clone ]]; then
   run_as_app git clone --quiet https://github.com/Shahbazi-Amir/IRMA.git "$APP_ROOT/source"
@@ -109,7 +171,7 @@ else
 fi
 if [[ ! -x "$APP_ROOT/venv/bin/python" ]]; then run_as_app python3 -m venv "$APP_ROOT/venv"; fi
 if ! run_as_app "$APP_ROOT/venv/bin/pip" install --require-virtualenv -e "$APP_ROOT"; then
-  if [[ -d /tmp/irma-wheelhouse ]]; then
+  if [[ -f /tmp/irma-wheelhouse/.validated && -d /tmp/irma-wheelhouse ]]; then
     run_as_app "$APP_ROOT/venv/bin/pip" install --no-index --find-links /tmp/irma-wheelhouse -e "$APP_ROOT"
   else
     write_failure dependency_install_failed "PyPI unavailable and no controller wheel bundle present"; exit 20
@@ -163,5 +225,8 @@ manifest={"server_region":"IR","server_ip_hash":"$IRMA_SERVER_HASH","os":"$(. /e
 json.dump(manifest,open("$ARTIFACTS/manifest.json","w"),indent=2)
 PY
 chmod -R go-rwx "$ARTIFACTS"
-if [[ "${IRMA_CLEANUP:-0}" == 1 ]]; then rm -f /tmp/irma-source.tar.gz /tmp/irma-live-validator-remote.sh; fi
+if [[ "${IRMA_CLEANUP:-0}" == 1 ]]; then
+  rm -f /tmp/irma-source.tar.gz /tmp/irma-live-validator-remote.sh /tmp/irma-wheelhouse.tar.gz
+  rm -rf /tmp/irma-wheelhouse /tmp/irma-validator-work
+fi
 printf '{"status":"success","artifacts":"retrievable"}\n'

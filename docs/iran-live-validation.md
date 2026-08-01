@@ -49,9 +49,10 @@ architecture for FIPIRAN, GitHub, PyPI, Python package files, and the OS package
 verification is always enabled. HTML error pages are not treated as JSON. Restrictions are detected
 and reported; the validator implements no proxy, geo-restriction, or sanctions bypass.
 
-Python dependencies first use normal TLS-verified pip installation. A controller-supplied official
-wheelhouse at `/tmp/irma-wheelhouse` is supported as an offline fallback. No unknown mirror is
-configured. Failure of both paths is reported as `dependency_install_failed`.
+Python dependencies use normal TLS-verified pip installation. A wheelhouse is used only when an
+operator explicitly uploads `/tmp/irma-wheelhouse` together with its `.validated` marker; the
+controller does not claim to build a target-compatible bundle automatically. No unknown mirror is
+configured. Failure is reported as `dependency_install_failed`.
 
 Read-only preflight performs no provisioning:
 
@@ -81,8 +82,9 @@ Artifacts are retrieved to `artifacts/iran-live-validation/`:
 - `failure.json` when a stage fails
 
 The manifest contains a truncated SHA-256 hash of the IP, never the IP itself. Logs and structured
-errors redact credentials. Use `--cleanup` to remove the uploaded source and remote controller
-after artifact retrieval; the current artifacts remain available until retrieved.
+errors redact credentials and the raw address. Use `--cleanup` to remove uploaded source,
+controller, dependency bundle, and temporary work material after artifact retrieval. It does not
+remove PostgreSQL, the application account, or reusable application directories.
 
 ```bash
 python scripts/iran_live_validator.py \
@@ -96,6 +98,11 @@ For the PR #8 follow-up, the one-IP wrapper is:
 ```bash
 ./scripts/validate_from_iran.sh 1.2.3.4
 ```
+
+The optional second argument selects another ref or SHA. Expert providers may be handled directly
+with `--ssh-user` and `--ssh-port`; the normal wrapper remains a one-IP flow. Run `--doctor` without
+a server for local checks and `--show-public-key` to print only the preferred public key, its path,
+and fingerprint. The VPS must trust that key before validation.
 
 ## Troubleshooting and removal
 
