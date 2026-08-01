@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/fix-fipiran-record-identity
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 3"
