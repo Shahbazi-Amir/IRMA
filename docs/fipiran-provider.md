@@ -40,3 +40,47 @@ Circuit Breaker پس از تعداد شکست تنظیم‌شده باز می‌
 بررسی ۳۰ ژوئیه ۲۰۲۶ از محیط Agent برای دامنه‌های عمومی با پاسخ HTML 502 از Proxy و
 `Connection refused` شکست خورد. این نتیجه محدودیت مسیر شبکه را نشان می‌دهد و تغییر
 Endpoint یا نیاز Header را اثبات نمی‌کند.
+
+## Adaptive refresh و Last Known Good
+
+FIPIRAN فقط مسیر نوشتن/به‌روزرسانی است؛ API، تحلیل و رتبه‌بندی همواره از DB می‌خوانند.
+در نتیجه قطع منبع نه liveness را خراب می‌کند و نه داده معتبر قبلی را حذف می‌کند.
+
+```mermaid
+flowchart TD
+    S["Dedicated scheduler"] --> P["Adaptive planner"]
+    P --> F["FIPIRAN refresh"]
+    F -->|valid commit| D["IRMA DB / Last Known Good"]
+    F -->|failure telemetry| P
+    D --> A["API / analytics / ranking"]
+```
+
+worker مستقل `python -m irma.workers.scheduler` تنها مالک scheduling است. در Docker با
+profile `scheduler` اجرا می‌شود. علاوه بر قفل درون‌پردازه‌ای، lease دیتابیسی مانع refresh
+هم‌زمان از scheduler، API یا چند worker می‌شود. lease منقضی‌شونده است تا crash باعث قفل
+دائمی نشود.
+
+planner روز را به bucketهای یک‌ساعته در `Asia/Tehran` تقسیم می‌کند. امتیاز هر bucket:
+
+`0.60 × success rate + 0.20 × (1-timeout rate) + 0.10 × history completion + 0.10 × latency score`
+
+تا پیش از حداقل نمونه، windowها «insufficient» هستند و bootstrap گسترده 06، 14 و 22
+با jitter استفاده می‌شود؛ این ساعت‌ها ادعای بهترین زمان نیستند. پس از یادگیری، windowهای
+قابل اتکا با حداقل فاصله انتخاب می‌شوند و exploration محدود مانع گیرکردن planner می‌شود.
+telemetry به‌صورت UTC ذخیره، در rolling lookback محاسبه و پس از retention حذف می‌شود.
+
+سه شکست پیاپی mode را به `degraded` و شش شکست به `daily_fallback` می‌برد. موفقیت بعدی
+وارد `recovering` می‌شود و سه موفقیت پیاپی `online_preferred` را برمی‌گرداند. حتی در
+fallback تقریباً سه فرصت adaptive روزانه باقی می‌ماند.
+
+`POST /v1/funds/latest` ابتدا freshness را می‌سنجد. داده تازه مستقیماً بازگردانده می‌شود؛
+داده stale فقط یک refresh محدود و coalesced ایجاد می‌کند. شکست refresh همراه با timestamp
+و `stale_warning` داده Last Known Good را برمی‌گرداند. نبود snapshot یک وضعیت معتبر
+`missing` است، نه خطای کلی برنامه. diagnostics شفاف در
+`GET /v1/providers/funds/refresh-status` شامل mode، freshness، آخرین attempt/success،
+source observation، failure، زمان بعدی و امتیاز تمام bucketهاست.
+
+catalogue در هر فرصت refresh می‌شود، اما history با `IRMA_FUND_HISTORY_LIMIT` محدود و
+بر اساس کمترین پوشش قبلی catch-up می‌شود؛ query کاربر full-history rebuild ایجاد نمی‌کند.
+Retryها bounded exponential backoff و jitter دارند، `Retry-After` رعایت می‌شود و circuit
+breaker درخواست‌های شکست‌خورده متوالی را متوقف می‌کند.

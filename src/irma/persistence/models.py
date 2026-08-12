@@ -75,6 +75,44 @@ class DataIngestionRun(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class RefreshTelemetry(Base):
+    """Bounded operational observations used by the adaptive planner."""
+
+    __tablename__ = "refresh_telemetry"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(80), index=True)
+    bucket: Mapped[int] = mapped_column(Integer, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    failure_category: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    timeout: Mapped[bool] = mapped_column(Boolean, default=False)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    history_success_ratio: Mapped[Decimal | None] = mapped_column(Numeric(8, 6), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RefreshControl(Base):
+    """Persistent source mode, schedule and cross-process refresh lease."""
+
+    __tablename__ = "refresh_controls"
+    provider: Mapped[str] = mapped_column(String(80), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(30), default="online_preferred")
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    consecutive_successes: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Asset(Base, TimestampMixin):
     __tablename__ = "assets"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
