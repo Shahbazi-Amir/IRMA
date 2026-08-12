@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -314,7 +314,16 @@ def test_duplicate_symbols_and_multigroup_bootstrap_are_idempotent(session: Sess
     assert len(second["history_errors"]) == 3
 
 
-def test_refresh_is_idempotent_and_produces_ranking(session: Session) -> None:
+def test_refresh_is_idempotent_and_produces_ranking(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return datetime(2026, 7, 30, tzinfo=UTC)
+
+    monkeypatch.setattr("irma.services.fund_rankings.datetime", FixedDateTime)
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
