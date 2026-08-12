@@ -9,18 +9,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from alembic.util.exc import CommandError
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from irma.config import get_settings
 from irma.persistence.database import SessionLocal
 from irma.persistence.migrations import upgrade_database
 from irma.persistence.models import Fund, FundMetric, FundNavHistory
-from irma.providers.fipiran import ProviderBlockedError, ProviderContractError
 from irma.services.data_refresh import refresh_from_fipiran
 from irma.services.fund_rankings import rank_funds
+from irma.services.live_validation import classify_failure
 
 
 def _counts(session: Session) -> dict[str, int]:
@@ -48,17 +46,6 @@ def _duplicate_counts(session: Session) -> dict[str, int]:
         "history": len(session.execute(history_duplicates).all()),
         "metrics": len(session.execute(metric_duplicates).all()),
     }
-
-
-def classify_failure(exc: Exception) -> str:
-    """Keep local schema and validation failures distinct from source outages."""
-    if isinstance(exc, CommandError):
-        return "migration_error"
-    if isinstance(exc, SQLAlchemyError):
-        return "database_error"
-    if isinstance(exc, (ProviderBlockedError, ProviderContractError, OSError)):
-        return "source_unavailable"
-    return "validation_error"
 
 
 def _refresh(

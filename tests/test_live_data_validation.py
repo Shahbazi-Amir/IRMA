@@ -1,12 +1,12 @@
 from pathlib import Path
 
 from alembic.util.exc import CommandError
-from scripts.live_data_validation import classify_failure
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import OperationalError
 
 from irma.persistence.migrations import upgrade_database
 from irma.providers.fipiran import ProviderBlockedError
+from irma.services.live_validation import classify_failure
 
 
 def test_upgrade_database_prepares_a_fresh_sqlite_database(tmp_path: Path) -> None:
