@@ -338,7 +338,13 @@ def test_refresh_is_idempotent_and_produces_ranking(
     )
     coordinator = RefreshCoordinator(max_retries=0)
     first = coordinator.refresh_funds(session, provider, history_limit=1)
-    second = coordinator.refresh_funds(session, provider, history_limit=1)
+    second = coordinator.refresh_funds(
+        session,
+        provider,
+        history_limit=1,
+        history_external_ids=first["history_attempted"],
+    )
+    assert first["history_attempted"] == second["history_attempted"] == ["fipiran:11215:1"]
     assert first["history_written"] == MIN_OBSERVATIONS + 30
     assert second["history_written"] == 0
     ranking = rank_funds(session, "index")

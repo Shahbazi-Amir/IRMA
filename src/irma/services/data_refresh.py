@@ -80,6 +80,7 @@ class RefreshCoordinator:
         provider: FundProvider,
         *,
         history_limit: int | None = 0,
+        history_external_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         if not _refresh_lock.acquire(blocking=False):
             raise RefreshAlreadyRunningError("a data refresh is already running")
@@ -206,9 +207,19 @@ class RefreshCoordinator:
                     (record for record in records if record.is_active),
                     key=lambda record: (history_counts[record.external_id], record.external_id),
                 )
-                eligible = (
-                    eligible_records if history_limit is None else eligible_records[:history_limit]
-                )
+                if history_external_ids is not None:
+                    by_external_id = {record.external_id: record for record in eligible_records}
+                    eligible = [
+                        by_external_id[external_id]
+                        for external_id in history_external_ids
+                        if external_id in by_external_id
+                    ]
+                else:
+                    eligible = (
+                        eligible_records
+                        if history_limit is None
+                        else eligible_records[:history_limit]
+                    )
                 for record in eligible:
                     fund = session.scalar(
                         select(Fund).where(Fund.external_id == record.external_id)
@@ -258,6 +269,10 @@ class RefreshCoordinator:
                 "records_written": written,
                 "history_written": history_written,
                 "history_errors": history_errors,
+                "history_attempted": [record.external_id for record in eligible]
+                if isinstance(provider, HistoricalFundProvider)
+                and (history_limit is None or history_limit > 0)
+                else [],
             }
         except Exception as exc:
             session.rollback()
@@ -291,6 +306,7 @@ def refresh_from_fipiran(
     max_retries: int,
     min_interval_seconds: float,
     history_limit: int | None,
+    history_external_ids: list[str] | None = None,
     catalog_path: str = "fund/fundcompare/",
     history_path: str = "chart/getfundchart",
     user_agent: str = "IRMA/1.0 (+https://github.com/Shahbazi-Amir/IRMA)",
@@ -309,7 +325,10 @@ def refresh_from_fipiran(
         cooldown_seconds=cooldown_seconds,
     ) as provider:
         return RefreshCoordinator(max_retries=0).refresh_funds(
-            session, provider, history_limit=history_limit
+            session,
+            provider,
+            history_limit=history_limit,
+            history_external_ids=history_external_ids,
         )
 
 

@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import func, select
 
 from irma.config import get_settings
 from irma.persistence.database import SessionLocal
+from irma.persistence.migrations import upgrade_database
 from irma.persistence.models import DataSource, Fund, FundMetric, FundNavHistory
 from irma.services.data_refresh import refresh_from_settings
 
@@ -24,9 +23,7 @@ def main() -> int:
         "started_at": started_at.isoformat(),
     }
     try:
-        alembic_config = Config("alembic.ini")
-        alembic_config.set_main_option("sqlalchemy.url", settings.database_url)
-        command.upgrade(alembic_config, "head")
+        upgrade_database(settings.database_url)
         with SessionLocal() as session:
             session.execute(select(1))
             refresh = refresh_from_settings(session, settings)
