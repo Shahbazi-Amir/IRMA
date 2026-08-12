@@ -31,6 +31,8 @@ class _FundItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     reg_no: str = Field(alias="regNo")
+    group_id: int = Field(alias="groupId")
+    ins_code: str | None = Field(default=None, alias="insCode")
     name: str
     fund_type: int = Field(alias="fundType")
     date: datetime
@@ -61,6 +63,7 @@ class _NavItem(BaseModel):
 
     date: datetime
     cancel_nav: float = Field(alias="cancelNav")
+    statistical_nav: float = Field(alias="statisticalNav")
 
 
 class ProviderBlockedError(ValueError):
@@ -69,6 +72,10 @@ class ProviderBlockedError(ValueError):
 
 class ProviderContractError(ValueError):
     """The upstream response no longer matches a validated contract."""
+
+
+class HistoryIdentityError(ValueError):
+    """History cannot be assigned to exactly one catalogue identity."""
 
 
 class CircuitOpenError(RuntimeError):
@@ -133,6 +140,21 @@ class FipiranFundProvider:
         self.sleep = sleep
         self._last_request_at = 0.0
         self.circuit = CircuitState()
+        self._catalogue_by_reg_no: dict[str, list[_FundItem]] = {}
+
+    @staticmethod
+    def _external_id(item: _FundItem) -> str:
+        return f"fipiran:{item.reg_no}:{item.group_id}"
+
+    @staticmethod
+    def _parse_external_id(external_id: str) -> tuple[str, int]:
+        parts = external_id.split(":")
+        if len(parts) != 3 or parts[0] != "fipiran":
+            raise HistoryIdentityError(f"invalid FIPIRAN external_id: {external_id}")
+        try:
+            return parts[1], int(parts[2])
+        except ValueError as exc:
+            raise HistoryIdentityError(f"invalid FIPIRAN external_id: {external_id}") from exc
 
     def close(self) -> None:
         if self._owns_client:
@@ -254,25 +276,20 @@ class FipiranFundProvider:
         if payload.status != 200:
             raise ValueError(f"FIPIRAN returned status {payload.status}")
         records: list[FundRecord] = []
-        seen: dict[str, tuple[object, ...]] = {}
+        seen: dict[tuple[str, int], _FundItem] = {}
+        catalogue_by_reg_no: dict[str, list[_FundItem]] = {}
         for item in payload.items:
-            identity_signature = (
-                item.fund_type,
-                item.initiation_date,
-                item.small_symbol_name,
-                item.type_of_invest,
-                item.cancel_nav,
-                item.statistical_nav,
-                item.net_asset,
-                item.manager,
-                item.date,
-            )
-            previous_signature = seen.get(item.reg_no)
-            if previous_signature is not None:
-                if previous_signature != identity_signature:
-                    raise ValueError(f"conflicting duplicate FIPIRAN regNo: {item.reg_no}")
+            identity = (item.reg_no, item.group_id)
+            previous = seen.get(identity)
+            if previous is not None:
+                if previous != item:
+                    raise ProviderContractError(
+                        "conflicting duplicate FIPIRAN catalogue identity: "
+                        f"regNo={item.reg_no}, groupId={item.group_id}"
+                    )
                 continue
-            seen[item.reg_no] = identity_signature
+            seen[identity] = item
+            catalogue_by_reg_no.setdefault(item.reg_no, []).append(item)
             fund_type = FUND_TYPES.get(item.fund_type)
             if fund_type is None:
                 continue
@@ -281,7 +298,7 @@ class FipiranFundProvider:
                 raise ValueError(f"non-positive NAV for FIPIRAN fund {item.reg_no}")
             records.append(
                 FundRecord(
-                    external_id=item.reg_no,
+                    external_id=self._external_id(item),
                     name_fa=item.name.strip(),
                     symbol=(item.small_symbol_name or "").strip() or None,
                     fund_type=fund_type,
@@ -307,14 +324,36 @@ class FipiranFundProvider:
                     metadata=self._metadata(raw, item.date, item.reg_no),
                 )
             )
+        self._catalogue_by_reg_no = catalogue_by_reg_no
         return records
 
     def fetch_nav_history(self, external_id: str) -> list[FundNavRecord]:
-        raw = self._request("GET", f"{self.history_path}?regno={external_id}&showAll=true")
+        reg_no, group_id = self._parse_external_id(external_id)
+        candidates = self._catalogue_by_reg_no.get(reg_no)
+        if not candidates:
+            raise HistoryIdentityError(
+                f"catalogue identity not loaded for FIPIRAN history: {external_id}"
+            )
+        raw = self._request("GET", f"{self.history_path}?regno={reg_no}&showAll=true")
         try:
             items = TypeAdapter(list[_NavItem]).validate_json(raw)
         except ValueError as exc:
             raise ProviderContractError("history schema mismatch") from exc
+        if not items:
+            raise HistoryIdentityError(f"empty FIPIRAN history for {external_id}")
+        latest = max(items, key=lambda value: value.date)
+        matches = [
+            item
+            for item in candidates
+            if item.cancel_nav == latest.cancel_nav
+            and item.statistical_nav == latest.statistical_nav
+        ]
+        requested = next((item for item in candidates if item.group_id == group_id), None)
+        if requested is None or len(matches) != 1 or matches[0] != requested:
+            raise HistoryIdentityError(
+                "FIPIRAN regNo history does not uniquely match catalogue identity: "
+                f"{external_id}; matches={[self._external_id(item) for item in matches]}"
+            )
         records: list[FundNavRecord] = []
         seen: set[datetime] = set()
         for item in sorted(items, key=lambda value: value.date):
@@ -330,7 +369,7 @@ class FipiranFundProvider:
                     observed_at=observed_at,
                     nav=item.cancel_nav,
                     total_net_assets=None,
-                    metadata=self._metadata(raw, observed_at, external_id),
+                    metadata=self._metadata(raw, observed_at, reg_no),
                 )
             )
         return records
