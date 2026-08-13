@@ -1,5 +1,8 @@
-from sqlalchemy import inspect
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from sqlalchemy import create_engine, inspect, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from irma.persistence.models import Base, DataSource
 from irma.persistence.repositories import data_source_status
@@ -56,3 +59,27 @@ def test_stale_source_is_labeled(session: Session) -> None:
     session.add(source)
     session.commit()
     assert data_source_status(session)[0]["status"] == "valid"
+
+
+def test_sqlite_naive_source_timestamp_is_safely_labeled_stale(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'status.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        session.add(
+            DataSource(
+                name="fipiran",
+                source_identifier="https://www.fipiran.com",
+                source_type="api",
+                status="valid",
+                last_valid_observation_at=datetime.now(UTC) - timedelta(days=3),
+            )
+        )
+        session.commit()
+    with factory() as session:
+        stored = session.scalar(select(DataSource))
+        assert stored is not None
+        assert stored.last_valid_observation_at is not None
+        assert stored.last_valid_observation_at.tzinfo is None
+        assert data_source_status(session)[0]["status"] == "stale"
+    engine.dispose()
