@@ -44,6 +44,8 @@ def test_all_required_tables_exist(session: Session) -> None:
         "backfill_checkpoints",
         "refresh_controls",
         "refresh_telemetry",
+        "historical_series",
+        "historical_observations",
     }
     assert required <= names
     assert required == set(Base.metadata.tables)

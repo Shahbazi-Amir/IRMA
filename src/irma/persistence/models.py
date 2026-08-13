@@ -133,6 +133,31 @@ class AssetPrice(Base, ProvenanceMixin):
     market_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
+class HistoricalSeries(Base, TimestampMixin):
+    """Canonical audited time-series identity for cross-asset historical analysis."""
+
+    __tablename__ = "historical_series"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    name_fa: Mapped[str] = mapped_column(String(200))
+    asset_class: Mapped[str] = mapped_column(String(50), index=True)
+    frequency: Mapped[str] = mapped_column(String(20))
+    unit: Mapped[str] = mapped_column(String(30))
+    geography: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id"), nullable=True)
+    methodology_note: Mapped[str] = mapped_column(Text)
+
+
+class HistoricalObservation(Base, ProvenanceMixin):
+    __tablename__ = "historical_observations"
+    __table_args__ = (UniqueConstraint("series_id", "valid_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_id: Mapped[int] = mapped_column(ForeignKey("historical_series.id"), index=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(28, 8))
+    publication_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+
+
 class Fund(Base, TimestampMixin):
     __tablename__ = "funds"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
