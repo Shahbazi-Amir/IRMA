@@ -3,6 +3,8 @@
 from datetime import date, datetime
 from decimal import Decimal
 
+from irma.presentation import number_to_persian_words
+
 DIGITS = str.maketrans("0123456789,.%", "۰۱۲۳۴۵۶۷۸۹٬٫٪")
 
 
@@ -25,6 +27,12 @@ def human_toman(value: int | float | Decimal | None) -> str:
     if amount >= 1_000_000:
         return f"{fa(f'{amount / Decimal(1_000_000):.1f}')} میلیون تومان"
     return toman(amount)
+
+
+def toman_words(value: int | float | Decimal | None) -> str:
+    if value is None:
+        return "داده موجود نیست"
+    return f"{number_to_persian_words(value)} تومان"
 
 
 def percent(value: float | Decimal | None, *, ratio: bool = False) -> str:

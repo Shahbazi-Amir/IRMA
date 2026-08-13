@@ -76,6 +76,47 @@ def human_toman(value: Decimal | int | float | None) -> str:
     return format_toman(amount)
 
 
+_ONES = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"]
+_TEENS = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"]
+_TENS = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"]
+_HUNDREDS = ["", "صد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد"]
+_SCALES = ["", "هزار", "میلیون", "میلیارد", "تریلیون"]
+
+
+def _under_thousand(number: int) -> str:
+    parts: list[str] = []
+    if number >= 100:
+        parts.append(_HUNDREDS[number // 100])
+        number %= 100
+    if 10 <= number < 20:
+        parts.append(_TEENS[number - 10])
+    else:
+        if number >= 20:
+            parts.append(_TENS[number // 10])
+        if number % 10:
+            parts.append(_ONES[number % 10])
+    return " و ".join(parts)
+
+
+def number_to_persian_words(value: Decimal | int | float) -> str:
+    """Spell an integer amount for bank-app-like zero checking."""
+    number = int(Decimal(str(value)))
+    if number == 0:
+        return "صفر"
+    if number < 0:
+        return f"منفی {number_to_persian_words(-number)}"
+    groups: list[str] = []
+    scale = 0
+    while number:
+        group = number % 1000
+        if group:
+            words = _under_thousand(group)
+            groups.append(f"{words} {_SCALES[scale]}".strip())
+        number //= 1000
+        scale += 1
+    return " و ".join(reversed(groups))
+
+
 def format_percent(value: float | Decimal | None, *, ratio: bool = False) -> str:
     if value is None:
         return "داده کافی نیست"

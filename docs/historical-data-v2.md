@@ -28,3 +28,24 @@ The analytics layer supports total return, maximum drawdown and rolling-window d
 (median, quartiles, best/worst and positive-window ratio). Frequency must be supplied explicitly;
 monthly housing observations must never be treated as daily prices. All output carries the notice
 that historical evidence is neither a forecast nor a guaranteed return.
+
+## Current V2 data audit
+
+The repository contains providers and import contracts, but no committed production database.
+A fresh/offline installation therefore has this inventory. Runtime gating can enable only an
+asset and horizon backed by sufficient verified observations.
+
+| Asset | Configured source path | Fresh coverage | Frequency | 1w | 1m | 3m | 6m | 1y | Numeric scenario |
+|---|---|---:|---|---|---|---|---|---|---|
+| Fixed-income funds | FIPIRAN catalogue/NAV provider | 0 | daily when fetched | withheld | withheld | withheld | withheld | withheld | after fresh sufficient NAV history |
+| Gold funds | FIPIRAN catalogue/NAV provider | 0 | daily when fetched | withheld | withheld | withheld | withheld | withheld | after fresh sufficient NAV history |
+| Equity/index funds | FIPIRAN catalogue/NAV provider | 0 | daily when fetched | withheld | withheld | withheld | withheld | withheld | after fresh sufficient NAV history |
+| Gold | verified historical CSV contract; source pending | 0 | unknown | withheld | withheld | withheld | withheld | withheld | no |
+| FX | CBI official candidate; free-market series separate and pending | 0 | unknown | withheld | withheld | withheld | withheld | withheld | no |
+| Stock index | TSETMC official candidate | 0 | unknown | withheld | withheld | withheld | withheld | withheld | no |
+| Inflation | CBI official candidate | 0 | monthly when imported | n/a | withheld | withheld | withheld | withheld | no |
+| Housing | authoritative index source pending | 0 | unknown | n/a | withheld | withheld | withheld | withheld | no |
+| Bank deposit | official product/rate import; verified current rate absent | 0 | contractual | withheld | withheld | withheld | withheld | withheld | no |
+
+No row authorizes a return number on a fresh installation. The comparison service withholds
+numbers until provenance, identity, unit, quality, freshness, frequency and minimum history pass.

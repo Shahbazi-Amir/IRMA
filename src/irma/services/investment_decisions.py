@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from irma.domain.profile import Horizon, InvestorProfile, RiskTolerance
 from irma.persistence.models import DataSource, Fund, FundNavHistory
 from irma.presentation import ASSET_LABELS, HORIZON_LABELS, LIQUIDITY_LABELS, RISK_LABELS
+from irma.services.asset_comparison import compare_assets
 from irma.services.recommendations import create_recommendation
 
 
@@ -22,6 +23,7 @@ class SimpleDecisionRequest(BaseModel):
     monthly_contribution_toman: Decimal = Field(default=Decimal(0), ge=0)
     goal: str = Field(default="capital_growth", max_length=80)
     selected_assets: list[str] = Field(default_factory=list)
+    horizon_days: int | None = Field(default=None, ge=7, le=3650)
 
 
 def _profile(request: SimpleDecisionRequest) -> InvestorProfile:
@@ -75,6 +77,9 @@ def create_simple_decision(request: SimpleDecisionRequest, session: Session) -> 
     sources = list(session.scalars(select(DataSource)))
     fund_count = session.scalar(select(func.count(Fund.id))) or 0
     history_count = session.scalar(select(func.count(FundNavHistory.id))) or 0
+    candidates = compare_assets(
+        session, request.capital_toman, request.horizon, request.risk, request.horizon_days
+    )
     freshness = "missing"
     if sources:
         freshness = "degraded" if any(source.status != "valid" for source in sources) else "fresh"
@@ -88,6 +93,7 @@ def create_simple_decision(request: SimpleDecisionRequest, session: Session) -> 
             "goal": request.goal,
         },
         "allocation": allocations,
+        "candidates": candidates,
         "decision_trace": _trace(request),
         "historical_context": {
             "available": history_count >= 2,

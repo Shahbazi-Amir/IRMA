@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import streamlit as st
 from api_client import ApiUnavailable, get, post
-from formatters import clean, friendly_date, human_toman, percent, toman
+from formatters import clean, friendly_date, percent, toman, toman_words
 
 st.set_page_config(page_title="IRMA | تصمیم سرمایه‌گذاری", page_icon="🌱", layout="wide")
 st.markdown(
     """
     <style>
-    html,body,[class*="css"],[data-testid="stAppViewContainer"]{direction:rtl;text-align:right}
-    [data-testid="stSidebar"],.stMetric,.stAlert,.stTabs,.stForm{direction:rtl;text-align:right}
-    button{min-height:2.8rem}.block-container{max-width:1150px;padding-top:2rem}
-    @media(max-width:700px){.block-container{padding:1rem}.stColumn{min-width:100%!important}}
+    html,body,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{direction:rtl;text-align:right}
+    [data-testid="stMarkdownContainer"], [data-testid="stAlert"], [data-testid="stForm"],
+    [data-testid="stExpander"], [data-testid="stCaptionContainer"], [role="tablist"],
+    [role="radiogroup"], label, p, h1, h2, h3 {direction:rtl;text-align:right}
+    [data-baseweb="select"]>div, [data-baseweb="input"]>div {direction:rtl;text-align:right}
+    [data-testid="stMetric"]{direction:rtl;text-align:right;overflow-wrap:anywhere}
+    [data-testid="stMetricValue"]{font-size:1.25rem;line-height:1.6;white-space:normal}
+    h1{font-size:1.8rem!important;line-height:1.6!important}h2{font-size:1.35rem!important;line-height:1.6!important}
+    h3{font-size:1.1rem!important;line-height:1.65!important}p,span,label{line-height:1.8}
+    button{min-height:2.8rem;white-space:normal!important}.block-container{max-width:1150px;padding-top:1.5rem}
+    [data-testid="stHorizontalBlock"]{align-items:stretch}.irma-money{font-size:1rem;line-height:2;margin:.2rem 0 1rem}
+    @media(max-width:700px){.block-container{padding:.75rem}.stColumn{min-width:100%!important}h1{font-size:1.45rem!important}h2{font-size:1.2rem!important}}
     </style>
     """,
     unsafe_allow_html=True,
@@ -21,14 +29,13 @@ st.markdown(
 
 NOTICE = "این تحلیل تضمین سود نیست؛ عملکرد گذشته آینده را تضمین نمی‌کند."
 HORIZONS = {
-    "چند روز": "days",
-    "یک هفته تا یک ماه": "one_to_four_weeks",
-    "یک تا سه ماه": "one_to_three_months",
-    "سه تا شش ماه": "three_to_six_months",
-    "شش ماه تا یک سال": "six_to_twelve_months",
-    "یک تا سه سال": "one_to_three_years",
-    "سه تا پنج سال": "three_to_five_years",
-    "پنج سال و بیشتر": "over_five_years",
+    "یک هفته": ("days", 7),
+    "یک ماه": ("one_to_four_weeks", 30),
+    "سه ماه": ("one_to_three_months", 90),
+    "شش ماه": ("three_to_six_months", 180),
+    "یک سال": ("six_to_twelve_months", 365),
+    "سه سال": ("one_to_three_years", 1095),
+    "پنج سال": ("three_to_five_years", 1825),
 }
 RISKS = {"کم": "conservative", "متوسط": "moderate", "زیاد": "aggressive"}
 ASSETS = {
@@ -80,15 +87,69 @@ def market_strip() -> None:
 def render_decision(data: dict[str, object]) -> None:
     st.success("پیشنهاد متناسب با اطلاعات شما آماده شد")
     st.caption(data["notice"])
-    st.subheader("پیشنهاد من")
+    st.subheader("بهترین گزینه‌ها برای شرایط شما")
+    available = [item for item in data["candidates"] if item["numeric_scenario_allowed"]]
+    if available:
+        st.success(f"گزینه مناسب‌تر بر پایه داده موجود: {available[0]['label']}")
+    else:
+        st.info(
+            "فعلاً داده کافی برای رتبه‌بندی عددی دارایی‌ها وجود ندارد؛ هیچ بازدهی حدس زده نشده است."
+        )
+    for item in data["candidates"]:
+        with st.container(border=True):
+            st.markdown(f"### {item['label']}")
+            cols = st.columns(3)
+            cols[0].metric("تناسب با شرایط شما", item["suitability"])
+            cols[1].metric("ریسک", item["risk"])
+            cols[2].metric("نقدشوندگی", item["liquidity"])
+            if not item["numeric_scenario_allowed"]:
+                st.info(item["withheld_reason"])
+                st.caption(item["method"])
+                continue
+            scenario = item["scenario"]["median"]
+            st.write("**سناریوی میانه در پنجره‌های تاریخی مشابه**")
+            values = st.columns(3)
+            values[0].metric("اصل سرمایه", toman(scenario["principal_toman"]))
+            change_label = "سود تاریخی" if scenario["profit_loss_toman"] >= 0 else "زیان تاریخی"
+            values[1].metric(change_label, toman(abs(scenario["profit_loss_toman"])))
+            values[2].metric("مبلغ نهایی تاریخی", toman(scenario["final_value_toman"]))
+            st.caption(
+                f"تعداد پنجره‌ها: {clean(item['scenario']['sample_count'])} | "
+                f"آخرین مشاهده: {friendly_date(item['latest_observation_at'])}"
+            )
+            st.caption("این اعداد شواهد تاریخی‌اند و پیش‌بینی یا تضمین آینده نیستند.")
+            if item["fund_candidates"]:
+                st.write(
+                    "گزینه‌های دارای داده: " + "، ".join(x["name"] for x in item["fund_candidates"])
+                )
+    st.subheader("مقایسه نتیجه")
+    st.dataframe(
+        [
+            {
+                "گزینه": item["label"],
+                "ریسک": item["risk"],
+                "تناسب": item["suitability"],
+                "سناریوی میانه": (
+                    toman(item["scenario"]["median"]["final_value_toman"])
+                    if item["scenario"]
+                    else "داده کافی نیست"
+                ),
+                "وضعیت داده": "معتبر" if item["numeric_scenario_allowed"] else "ناکافی",
+            }
+            for item in data["candidates"]
+        ],
+        hide_index=True,
+        width="stretch",
+    )
+    st.subheader("تخصیص پیشنهادی ثانویه")
     for item in data["allocation"]:
         if not item["available"]:
             continue
         with st.container(border=True):
             cols = st.columns([2, 1, 2])
             cols[0].markdown(f"### {item['label']}")
-            cols[1].metric("سهم", percent(item["percent"]))
-            cols[2].metric("مبلغ", toman(item["amount_toman"]))
+            cols[1].metric("سهم از سبد", percent(item["percent"]))
+            cols[2].metric("مبلغ تخصیص‌یافته", toman(item["amount_toman"]))
             st.write(item["reason"])
             st.caption(f"ریسک: {item['risk']} | نقدشوندگی: {item['liquidity']}")
             if item["fund_candidates"]:
@@ -126,8 +187,11 @@ def investment_page() -> None:
             value=500_000_000,
             step=10_000_000,
         )
-        st.caption(f"معادل {human_toman(capital)}")
-        horizon_label = st.selectbox("برای چه مدتی؟", list(HORIZONS), index=3)
+        st.markdown(
+            f'<div class="irma-money"><strong>{toman(capital)}</strong><br>{toman_words(capital)}</div>',
+            unsafe_allow_html=True,
+        )
+        horizon_label = st.selectbox("برای چه مدتی؟", list(HORIZONS), index=2)
         risk_label = st.radio(
             "چه مقدار ریسک می‌پذیرید؟",
             list(RISKS),
@@ -143,14 +207,15 @@ def investment_page() -> None:
                 list(ASSETS),
                 placeholder="پیش‌فرض: همه گزینه‌های قابل تحلیل",
             )
-        submitted = st.form_submit_button("بررسی بهترین گزینه‌ها", use_container_width=True)
+        submitted = st.form_submit_button("بررسی بهترین گزینه‌ها", width="stretch")
     if submitted:
         try:
             st.session_state["decision"] = post(
                 "/v2/investment-decision",
                 {
                     "capital_toman": capital,
-                    "horizon": HORIZONS[horizon_label],
+                    "horizon": HORIZONS[horizon_label][0],
+                    "horizon_days": HORIZONS[horizon_label][1],
                     "risk": RISKS[risk_label],
                     "monthly_contribution_toman": monthly,
                     "goal": goal,
