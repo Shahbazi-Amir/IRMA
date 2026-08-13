@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-08-13",
+  "datasets": [
+    {"dataset":"inflation_cpi","source":"Statistical Center of Iran / Central Bank of Iran","source_identifier":"https://www.cbi.ir/Inflation/Inflation_FA.aspx","coverage_start":null,"coverage_end":null,"frequency":"monthly/publication-based","geography":"Iran","unit":"index/percent","rows":0,"quality":"blocked_pending_official_export","real_data":false},
+    {"dataset":"official_usd_rate","source":"Central Bank of Iran","source_identifier":"https://www.cbi.ir/exratesadv/exratesadv_fa.aspx","coverage_start":null,"coverage_end":null,"frequency":"daily","geography":"Iran official rate","unit":"IRR per USD","rows":0,"quality":"import_contract_ready","real_data":false},
+    {"dataset":"tehran_stock_exchange_index","source":"Tehran Securities Exchange Technology Management Co.","source_identifier":"https://www.tsetmc.com/","coverage_start":null,"coverage_end":null,"frequency":"daily","geography":"Tehran Stock Exchange","unit":"index points","rows":0,"quality":"blocked_pending_verified_export","real_data":false},
+    {"dataset":"tehran_housing","source":"Statistical Center of Iran / Central Bank of Iran","source_identifier":"official housing publication export required","coverage_start":null,"coverage_end":null,"frequency":"monthly/quarterly","geography":"Tehran only","unit":"Toman per square meter or index","rows":0,"quality":"blocked_pending_official_export","real_data":false},
+    {"dataset":"gold_18k","source":"official verified source not yet confirmed","source_identifier":null,"coverage_start":null,"coverage_end":null,"frequency":"daily","geography":"Iran","unit":"Toman per gram","rows":0,"quality":"blocked_source_verification","real_data":false},
+    {"dataset":"emami_coin","source":"official verified source not yet confirmed","source_identifier":null,"coverage_start":null,"coverage_end":null,"frequency":"daily","geography":"Iran","unit":"Toman","rows":0,"quality":"blocked_source_verification","real_data":false},
+    {"dataset":"bank_deposit_terms","source":"Central Bank of Iran official circulars","source_identifier":"https://www.cbi.ir/PolicyRates/policyrates_fa.aspx","coverage_start":null,"coverage_end":null,"frequency":"event-based","geography":"Iran","unit":"percent","rows":0,"quality":"blocked_deposit_terms_not_interbank_rate","real_data":false},
+    {"dataset":"fund_nav","source":"FIPIRAN","source_identifier":"https://www.fipiran.com/services","coverage_start":null,"coverage_end":null,"frequency":"daily","geography":"Iran","unit":"Toman","rows":0,"quality":"live_source_managed_separately","real_data":false}
+  ]
+}

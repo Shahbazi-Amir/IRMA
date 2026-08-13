@@ -41,6 +41,8 @@ from irma.persistence.models import (
     FundInstrumentMapping,
     FundMarketHistory,
     FundNavHistory,
+    HistoricalObservation,
+    HistoricalSeries,
     InflationObservation,
     InflationSeries,
     InstrumentMarketHistory,
@@ -61,6 +63,8 @@ from irma.services.data_refresh import (
 )
 from irma.services.fund_backfill import backfill_fund_history
 from irma.services.fund_rankings import rank_funds
+from irma.services.historical_intelligence import historical_report
+from irma.services.investment_decisions import SimpleDecisionRequest, create_simple_decision
 from irma.services.multi_asset_refresh import (
     refresh_bank_products,
     refresh_inflation,
@@ -73,6 +77,53 @@ from irma.trading_engine.backtest import BacktestRequest
 
 router = APIRouter()
 SessionDependency = Annotated[Session, Depends(get_session)]
+
+
+@router.post("/v2/investment-decision", tags=["investment-v2"])
+def investment_decision(
+    request: SimpleDecisionRequest, session: SessionDependency
+) -> dict[str, Any]:
+    """Beginner-facing decision response; all financial logic stays server-side."""
+    return create_simple_decision(request, session)
+
+
+@router.get("/v2/historical/{series_code}", tags=["investment-v2"])
+def historical_series_report(
+    series_code: str,
+    session: SessionDependency,
+    horizon_periods: Annotated[int, Query(ge=1, le=600)] = 12,
+) -> dict[str, Any]:
+    """Return audited historical evidence, explicitly separate from forecasting."""
+    series = session.scalar(select(HistoricalSeries).where(HistoricalSeries.code == series_code))
+    if series is None:
+        raise HTTPException(status_code=404, detail="historical series is not available")
+    observations = list(
+        session.scalars(
+            select(HistoricalObservation)
+            .where(HistoricalObservation.series_id == series.id)
+            .where(HistoricalObservation.valid_at.is_not(None))
+            .order_by(HistoricalObservation.valid_at)
+        )
+    )
+    dates = [item.valid_at for item in observations if item.valid_at is not None]
+    if len(dates) <= horizon_periods:
+        raise HTTPException(status_code=409, detail="insufficient history for requested horizon")
+    report = historical_report(
+        dates,
+        [float(item.value) for item in observations],
+        horizon_periods,
+    )
+    return {
+        "series": {
+            "code": series.code,
+            "name_fa": series.name_fa,
+            "asset_class": series.asset_class,
+            "frequency": series.frequency,
+            "unit": series.unit,
+            "methodology_note": series.methodology_note,
+        },
+        "report": report,
+    }
 
 
 @router.get("/health", tags=["system"])
