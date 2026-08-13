@@ -1,0 +1,30 @@
+[
+  {
+    "dataset_id": "inflation_annual",
+    "indicator": "FP.CPI.TOTL.ZG",
+    "rows_received": 66,
+    "rows_written": 66,
+    "duplicates": 0,
+    "coverage_start": "1960",
+    "coverage_end": "2025",
+    "frequency": "annual",
+    "unit": "percent",
+    "sha256": "0087af1f32ed24bb851bb747d00853244f97f43542f8fc2c4c28d95524bc5bc2",
+    "source_version": "2026-07-13",
+    "quality_status": "valid"
+  },
+  {
+    "dataset_id": "fx_official_annual",
+    "indicator": "PA.NUS.FCRF",
+    "rows_received": 64,
+    "rows_written": 64,
+    "duplicates": 0,
+    "coverage_start": "1960",
+    "coverage_end": "2023",
+    "frequency": "annual",
+    "unit": "IRR per USD",
+    "sha256": "8313e59ccc7c528ef58eeb170507e83f8d76f70788ab4436f85bce2c3129083b",
+    "source_version": "2026-07-13",
+    "quality_status": "valid"
+  }
+]

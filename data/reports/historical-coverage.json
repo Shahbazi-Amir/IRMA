@@ -1,0 +1,46 @@
+[
+  {
+    "dataset": "irn-wdi-inflation-annual",
+    "name_fa": "تورم سالانه قیمت مصرف‌کننده ایران",
+    "frequency": "annual",
+    "unit": "percent",
+    "rows": 66,
+    "coverage_start": "1960-12-31",
+    "coverage_end": "2025-12-31",
+    "coverage_days": 23741,
+    "gaps": 0,
+    "duplicate_dates": 0,
+    "eligible_horizons": {
+      "1w": false,
+      "1m": false,
+      "3m": false,
+      "6m": false,
+      "1y": true,
+      "3y": true,
+      "5y": true
+    },
+    "quality": "valid"
+  },
+  {
+    "dataset": "irn-wdi-official-usd-irr-annual-average",
+    "name_fa": "نرخ رسمی متوسط سالانه ریال به دلار آمریکا",
+    "frequency": "annual",
+    "unit": "IRR per USD",
+    "rows": 64,
+    "coverage_start": "1960-12-31",
+    "coverage_end": "2023-12-31",
+    "coverage_days": 23010,
+    "gaps": 0,
+    "duplicate_dates": 0,
+    "eligible_horizons": {
+      "1w": false,
+      "1m": false,
+      "3m": false,
+      "6m": false,
+      "1y": true,
+      "3y": true,
+      "5y": true
+    },
+    "quality": "valid"
+  }
+]

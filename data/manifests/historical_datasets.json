@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-08-13T07:15:00Z",
+  "fixture_used": false,
+  "datasets": [
+    {
+      "dataset_id": "inflation_annual",
+      "source_name": "World Bank WDI / IMF IFS",
+      "source_identifier": "FP.CPI.TOTL.ZG",
+      "coverage_start": "1960",
+      "coverage_end": "2025",
+      "frequency": "annual",
+      "unit": "percent annual change",
+      "currency": "PERCENT",
+      "geography": "Iran",
+      "rows": 66,
+      "quality_status": "valid_secondary_distribution",
+      "sha256_at_validation": "0087af1f32ed24bb851bb747d00853244f97f43542f8fc2c4c28d95524bc5bc2",
+      "notes": "Real API response validated and ingested locally; not a monthly CPI level series."
+    },
+    {
+      "dataset_id": "fx_official_annual",
+      "source_name": "World Bank WDI / IMF IFS",
+      "source_identifier": "PA.NUS.FCRF",
+      "coverage_start": "1960",
+      "coverage_end": "2023",
+      "frequency": "annual",
+      "unit": "IRR per USD, annual average",
+      "currency": "IRRUSD",
+      "geography": "Iran",
+      "rows": 64,
+      "quality_status": "valid_secondary_distribution",
+      "sha256_at_validation": "8313e59ccc7c528ef58eeb170507e83f8d76f70788ab4436f85bce2c3129083b",
+      "notes": "Official annual-average rate only; must not represent Iran free-market USD."
+    }
+  ]
+}
