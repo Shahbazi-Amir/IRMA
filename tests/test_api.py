@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from irma.persistence.models import (
     Fund,
     FundDataConflict,
     FundFieldProvenance,
+    FundNavHistory,
 )
 
 
@@ -78,6 +80,57 @@ def test_data_status_lists_unavailable_adapters(client: TestClient) -> None:
     body = client.get("/v1/data-sources/status").json()
     assert body["database_sources"] == []
     assert any(item["name"] == "real-estate" for item in body["unavailable_adapters"])
+
+
+def test_status_endpoints_work_with_old_sqlite_data_and_offline_source(
+    client: TestClient, session: Session
+) -> None:
+    source = DataSource(
+        name="fipiran",
+        source_identifier="https://www.fipiran.com",
+        source_type="api",
+        status="unavailable",
+        last_fetched_at=datetime.now(UTC) - timedelta(days=8),
+        last_valid_observation_at=datetime.now(UTC) - timedelta(days=8),
+        last_error="ConnectTimeout",
+        record_count=1,
+    )
+    session.add(source)
+    session.flush()
+    fund = Fund(
+        external_id="fipiran:1:1",
+        name_fa="صندوق ذخیره‌شده",
+        fund_type="fixed_income",
+        source_id=source.id,
+        quality_status="valid",
+        last_data_at=datetime.now(UTC) - timedelta(days=8),
+    )
+    session.add(fund)
+    session.flush()
+    session.add(
+        FundNavHistory(
+            fund_id=fund.id,
+            nav=Decimal("12345"),
+            source_id=source.id,
+            observed_at=datetime.now(UTC) - timedelta(days=8),
+            valid_at=date.today() - timedelta(days=8),
+            quality_status="valid",
+        )
+    )
+    session.commit()
+
+    sources = client.get("/v1/data-sources/status")
+    refresh = client.get("/v1/providers/funds/refresh-status")
+
+    assert sources.status_code == 200
+    assert sources.json()["database_sources"][0]["status"] == "stale"
+    assert refresh.status_code == 200
+    assert refresh.json()["application_status"] == "healthy"
+    assert refresh.json()["data_freshness"] == "stale"
+    funds = client.get("/v1/funds")
+    assert funds.status_code == 200
+    assert funds.json()["items"][0]["latest_nav"] == 12345
+    assert funds.json()["items"][0]["source_status"] == "stale"
 
 
 def test_fund_provider_status_and_sanitized_diagnostics(client: TestClient) -> None:

@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     nav_conflict_error_percent: float = Field(default=2.0, ge=0, le=100)
     refresh_enabled: bool = False
     refresh_interval_minutes: int = Field(default=1440, ge=15)
+    refresh_targets_per_day: int = Field(default=3, ge=1, le=12)
+    refresh_timezone: str = "Asia/Tehran"
+    refresh_fresh_minutes: int = Field(default=180, ge=5, le=1440)
+    refresh_adaptive_lookback_days: int = Field(default=30, ge=1, le=180)
+    refresh_minimum_samples: int = Field(default=4, ge=1, le=100)
+    refresh_exploration_percent: int = Field(default=15, ge=0, le=50)
+    refresh_jitter_minutes: int = Field(default=20, ge=0, le=29)
+    refresh_minimum_spacing_hours: int = Field(default=5, ge=1, le=12)
+    refresh_lease_seconds: int = Field(default=300, ge=30, le=3600)
+    refresh_telemetry_retention_days: int = Field(default=90, ge=7, le=365)
     provider_timeout_seconds: int = Field(default=15, ge=1, le=120)
     provider_max_retries: int = Field(default=2, ge=0, le=10)
     fixture_data_enabled: bool = False

@@ -28,6 +28,7 @@ from irma.providers.base import FundNavRecord, FundProvider, FundRecord, Histori
 from irma.providers.chain import FundDataProviderChain
 from irma.providers.csv_provider import CsvFundProvider
 from irma.providers.fipiran import FipiranFundProvider
+from irma.services.adaptive_refresh import acquire_lease, record_outcome, release_lease
 
 logger = logging.getLogger(__name__)
 _refresh_lock = threading.Lock()
@@ -337,6 +338,16 @@ def refresh_from_settings(session: Session, settings: Any) -> dict[str, Any]:
     started_at = datetime.now(UTC)
     history_limit = None if settings.fund_history_all else settings.fund_history_limit
     provider_name = settings.fund_provider
+    lease_owner: str | None = None
+    if provider_name in {"fipiran", "chain"}:
+        lease_owner = acquire_lease(
+            session,
+            provider="fipiran",
+            seconds=settings.refresh_lease_seconds,
+            now=started_at,
+        )
+        if lease_owner is None:
+            raise RefreshAlreadyRunningError("a FIPIRAN refresh lease is already active")
     try:
         if provider_name == "csv":
             result = refresh_from_configured_csv(
@@ -386,6 +397,19 @@ def refresh_from_settings(session: Session, settings: Any) -> dict[str, Any]:
             finally:
                 chain.close()
         finished_at = datetime.now(UTC)
+        if provider_name in {"fipiran", "chain"}:
+            history_errors = result.get("history_errors", [])
+            status = "partial_success" if history_errors else "success"
+            attempted = max(1, int(history_limit or 0))
+            record_outcome(
+                session,
+                provider="fipiran",
+                started_at=started_at,
+                finished_at=finished_at,
+                status=status,
+                history_success_ratio=max(0.0, 1 - len(history_errors) / attempted),
+                retry_count=settings.provider_max_retries,
+            )
         return {
             **result,
             "provider": provider_name,
@@ -396,8 +420,21 @@ def refresh_from_settings(session: Session, settings: Any) -> dict[str, Any]:
     except RefreshAlreadyRunningError:
         raise
     except Exception as exc:
+        if provider_name in {"fipiran", "chain"}:
+            record_outcome(
+                session,
+                provider="fipiran",
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                status="failed",
+                error=exc,
+                retry_count=settings.provider_max_retries,
+            )
         logger.error("configured refresh failed", extra={"provider": provider_name})
         raise RuntimeError(f"{provider_name} refresh failed: {type(exc).__name__}: {exc}") from exc
+    finally:
+        if lease_owner is not None:
+            release_lease(session, provider="fipiran", owner=lease_owner)
 
 
 def _refresh_metrics(session: Session, fund: Fund) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -53,6 +53,7 @@ from irma.persistence.models import (
 from irma.persistence.repositories import data_source_status, get_fund, list_funds
 from irma.providers.fipiran import FipiranFundProvider
 from irma.providers.placeholders import PROVIDERS
+from irma.services.adaptive_refresh import freshness_decision, status_payload
 from irma.services.backtests import execute_backtest
 from irma.services.data_refresh import (
     RefreshAlreadyRunningError,
@@ -77,6 +78,53 @@ SessionDependency = Annotated[Session, Depends(get_session)]
 @router.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "irma"}
+
+
+@router.get("/v1/providers/funds/refresh-status", tags=["funds"])
+def fund_refresh_status(session: SessionDependency) -> dict[str, Any]:
+    """Source degradation is reported separately from application health."""
+    return status_payload(session, get_settings())
+
+
+@router.post("/v1/funds/latest", tags=["funds"])
+def latest_funds(session: SessionDependency) -> dict[str, Any]:
+    """Perform at most one bounded refresh, then always serve Last Known Good data."""
+    settings = get_settings()
+    source = session.scalar(select(DataSource).where(DataSource.name == "fipiran"))
+    decision = freshness_decision(
+        source,
+        now=datetime.now(UTC),
+        fresh_for=timedelta(minutes=settings.refresh_fresh_minutes),
+        latest=True,
+    )
+    refresh_result: dict[str, Any] | None = None
+    refresh_error: str | None = None
+    if decision.should_refresh:
+        try:
+            refresh_result = refresh_from_settings(session, settings)
+        except RefreshAlreadyRunningError:
+            refresh_error = "refresh_already_running"
+        except (HTTPError, RuntimeError, ValueError) as exc:
+            refresh_error = type(exc).__name__
+    items = list_funds(session)
+    source = session.scalar(select(DataSource).where(DataSource.name == "fipiran"))
+    final = freshness_decision(
+        source,
+        now=datetime.now(UTC),
+        fresh_for=timedelta(minutes=settings.refresh_fresh_minutes),
+        latest=False,
+    )
+    return {
+        "items": items,
+        "count": len(items),
+        "freshness": final.status,
+        "last_success_at": final.last_success_at,
+        "last_source_observation_at": final.source_observed_at,
+        "refresh": refresh_result,
+        "refresh_error": refresh_error,
+        "stale_warning": bool(refresh_error and items),
+        "dataset_status": "available" if items else "missing",
+    }
 
 
 @router.get("/ready", tags=["system"])

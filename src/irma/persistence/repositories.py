@@ -109,8 +109,13 @@ def data_source_status(session: Session, *, stale_after_hours: int = 48) -> list
     results: list[dict[str, Any]] = []
     for source in sources:
         status = source.status
-        if source.last_valid_observation_at and (
-            now - source.last_valid_observation_at > timedelta(hours=stale_after_hours)
+        last_valid_observation_at = source.last_valid_observation_at
+        if last_valid_observation_at is not None:
+            last_valid_observation_at = last_valid_observation_at.replace(
+                tzinfo=last_valid_observation_at.tzinfo or UTC
+            )
+        if last_valid_observation_at and (
+            now - last_valid_observation_at > timedelta(hours=stale_after_hours)
         ):
             status = "stale"
         results.append(
